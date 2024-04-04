@@ -3580,13 +3580,6 @@ atob@^2.1.2:
   version "2.1.2"
   resolved "https://registry.yarnpkg.com/atob/-/atob-2.1.2.tgz#6d9517eb9e030d2436666651e86bd9f6f13533c9"
 
-audio-file-decoder@^2.3.0:
-  version "2.3.0"
-  resolved "https://registry.yarnpkg.com/audio-file-decoder/-/audio-file-decoder-2.3.0.tgz#194653dcb45ec2461c24add680481ce67c4e6028"
-  integrity sha512-ZstTYmJiON0LC2Ye5gr5OLNH7J9qt6P4frb7WMrAO5Uc2aKK0sjKfSPv3SJx1SABdRt2ERPwkHUNkTjSgTiJzQ==
-  dependencies:
-    "@babel/runtime" "^7.13.10"
-
 autoprefixer@^10.4.2:
   version "10.4.2"
   resolved "https://registry.yarnpkg.com/autoprefixer/-/autoprefixer-10.4.2.tgz#25e1df09a31a9fba5c40b578936b90d35c9d4d3b"
@@ -9592,8 +9585,9 @@ react-test-renderer@^18.2.0:
     scheduler "^0.23.0"
 
 react-virtualized-auto-sizer@^1.0.6:
-  version "1.0.6"
-  resolved "https://registry.yarnpkg.com/react-virtualized-auto-sizer/-/react-virtualized-auto-sizer-1.0.6.tgz#66c5b1c9278064c5ef1699ed40a29c11518f97ca"
+  version "1.0.24"
+  resolved "https://registry.yarnpkg.com/react-virtualized-auto-sizer/-/react-virtualized-auto-sizer-1.0.24.tgz#3ebdc92f4b05ad65693b3cc8e7d8dd54924c0227"
+  integrity sha512-3kCn7N9NEb3FlvJrSHWGQ4iVl+ydQObq2fHMn12i5wbtm74zHOPhz/i64OL3c1S1vi9i2GXtZqNqUJTQ+BnNfg==
 
 react-window@^1.8.6:
   version "1.8.6"
