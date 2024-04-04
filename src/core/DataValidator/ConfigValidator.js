@@ -1,5 +1,5 @@
-import Registry from "../Registry";
-import messages from "../../utils/messages";
+import Registry from '../Registry';
+import messages from '../../utils/messages';
 
 export const errorBuilder = {
   /**
@@ -9,7 +9,7 @@ export const errorBuilder = {
     return {
       modelName,
       field,
-      error: "ERR_REQUIRED",
+      error: 'ERR_REQUIRED',
     };
   },
 
@@ -21,7 +21,7 @@ export const errorBuilder = {
       modelName,
       field,
       value,
-      error: "ERR_UNKNOWN_TAG",
+      error: 'ERR_UNKNOWN_TAG',
     };
   },
 
@@ -33,7 +33,7 @@ export const errorBuilder = {
       modelName,
       field,
       value,
-      error: "ERR_TAG_NOT_FOUND",
+      error: 'ERR_TAG_NOT_FOUND',
     };
   },
 
@@ -46,7 +46,20 @@ export const errorBuilder = {
       field,
       value,
       validType,
-      error: "ERR_TAG_UNSUPPORTED",
+      error: 'ERR_TAG_UNSUPPORTED',
+    };
+  },
+
+  /**
+   * Occurrs when tag has not expected parent tag at any level
+   */
+  parentTagUnexpected(modelName, field, value, validType) {
+    return {
+      modelName,
+      field,
+      value,
+      validType,
+      error: 'ERR_PARENT_TAG_UNEXPECTED',
     };
   },
 
@@ -59,35 +72,35 @@ export const errorBuilder = {
       field,
       value,
       validType,
-      error: "ERR_BAD_TYPE",
+      error: 'ERR_BAD_TYPE',
     };
   },
 
   internalError(error) {
     return {
-      error: "ERR_INTERNAL",
+      error: 'ERR_INTERNAL',
       value: String(error).substr(0, 1000),
       field: String(error.code),
-      modelName: "",
+      modelName: '',
     };
   },
 
   generalError(error) {
     return {
-      error: "ERR_GENERAL",
+      error: 'ERR_GENERAL',
       value: String(error).substr(0, 1000),
       field: String(error.code),
-      modelName: "",
+      modelName: '',
     };
   },
 
   loadingError(error, url, attrWithUrl, message = messages.ERR_LOADING_HTTP) {
-    console.log("ERR", error, error.code);
+    console.log('ERR', error, error.code);
     return {
-      error: "ERR_GENERAL",
+      error: 'ERR_GENERAL',
       value: message({ attr: attrWithUrl, error: String(error), url }),
       field: attrWithUrl,
-      modelName: "",
+      modelName: '',
     };
   },
 };
@@ -98,15 +111,16 @@ export const errorBuilder = {
  * @param {boolean} withNullType
  */
 const getTypeDescription = (type, withNullType = true) => {
-  let description = type
+  const description = type
     .describe()
     .match(/([a-z0-9?|]+)/gi)
-    .join("")
-    .split("|");
+    .join('')
+    .split('|');
 
   // Remove optional null
   if (withNullType === false) {
-    const index = description.indexOf("null?");
+    const index = description.indexOf('null?');
+
     if (index >= 0) description.splice(index, 1);
   }
 
@@ -116,24 +130,29 @@ const getTypeDescription = (type, withNullType = true) => {
 /**
  * Flatten config tree for faster iterations and searches
  * @param {object} tree
- * @param {string} parent
+ * @param {string | null;;} parent
+ * @param {string[]} parentParentTypes
+ * @param {object[]} result
  * @returns {object[]}
  */
-const flattenTree = (tree, parent = null) => {
-  const result = [];
+const flattenTree = (tree, parent = null, parentParentTypes = ['view'], result) => {
   if (!tree.children) return [];
 
-  for (let child of tree.children) {
+  const children = tree.type === 'pagedview' ? tree.children.slice(0, 1) : tree.children;
+
+
+  for (const child of children) {
     /* Create a child without children and
     assign id of the parent for quick mathcing */
-    const flatChild = { ...child, parent: parent?.id ?? null };
+    const parentTypes = [...parentParentTypes, ...(parent?.type ? [parent?.type] : [])];
+    const flatChild = { ...child, parent: parent?.id ?? null, parentTypes };
+
     delete flatChild.children;
 
     result.push(flatChild);
 
-    /* Recursively add children if exist */
     if (child.children instanceof Array) {
-      result.push(...flattenTree(child, child));
+      flattenTree(child, child, parentTypes, result);
     }
   }
 
@@ -150,7 +169,7 @@ const validateNameTag = (child, model) => {
 
   // HyperText can be used for mark-up, without name, so name is optional type there
   if (name && !name.optionalValues && child.name === undefined) {
-    return errorBuilder.required(model.name, "name");
+    return errorBuilder.required(model.name, 'name');
   }
 
   return null;
@@ -169,22 +188,38 @@ const validateToNameTag = (element, model, flatTree) => {
 
   if (!element.toname) return null;
 
-  const names = element.toname.split(","); // for pairwise
+  const names = element.toname.split(','); // for pairwise
 
-  for (let name of names) {
+  for (const name of names) {
     // Find referenced tag in the tree
     const controlledTag = flatTree.find(item => item.name === name);
 
     if (controlledTag === undefined) {
-      return errorBuilder.tagNotFound(model.name, "toname", name);
+      return errorBuilder.tagNotFound(model.name, 'toname', name);
     }
 
     if (controlledTags && controlledTags.validate(controlledTag.tagName).length) {
-      return errorBuilder.tagUnsupported(model.name, "toname", controlledTag.tagName, controlledTags);
+      return errorBuilder.tagUnsupported(model.name, 'toname', controlledTag.tagName, controlledTags);
     }
   }
 
   return null;
+};
+
+/**
+ * Validates parent of tag
+ * Checks that parent tag has the right type
+ * @param {Object} element
+ * @param {Object} model
+ * @param {Object[]} flatTree
+ */
+const validateParentTag = (element, model) => {
+  const parentTypes = model.properties.parentTypes?.value;
+
+  if (!parentTypes || element.parentTypes.find(elementParentType => parentTypes.find(type => elementParentType === type.toLowerCase()))) {
+    return null;
+  }
+  return errorBuilder.parentTagUnexpected(model.name, 'parent', element.tagName, model.properties.parentTypes);
 };
 
 /**
@@ -197,7 +232,7 @@ const validateAttributes = (child, model, fieldsToSkip) => {
   const result = [];
   const properties = Object.keys(model.properties);
 
-  for (let key of properties) {
+  for (const key of properties) {
     if (!{}.hasOwnProperty.call(child, key)) continue;
     if (fieldsToSkip.includes(key)) continue;
     const value = child[key];
@@ -226,21 +261,34 @@ export class ConfigValidator {
    * @param {*} node
    */
   static validate(root) {
-    const flatTree = flattenTree(root);
-    const propertiesToSkip = ["id", "children", "name", "toname", "controlledTags"];
+    const flatTree = [];
+
+    flattenTree(root, null, [], flatTree);
+    const propertiesToSkip = ['id', 'children', 'name', 'toname', 'controlledTags', 'parentTypes'];
     const validationResult = [];
 
-    for (let child of flatTree) {
-      const model = Registry.getModelByTag(child.type);
-      // Validate name attribute
-      const nameValidation = validateNameTag(child, model);
-      if (nameValidation !== null) validationResult.push(nameValidation);
+    for (const child of flatTree) {
+      try {
+        const model = Registry.getModelByTag(child.type);
+        // Validate name attribute
+        const nameValidation = validateNameTag(child, model);
 
-      // Validate toName attribute
-      const toNameValidation = validateToNameTag(child, model, flatTree);
-      if (toNameValidation !== null) validationResult.push(toNameValidation);
+        if (nameValidation !== null) validationResult.push(nameValidation);
 
-      validationResult.push(...validateAttributes(child, model, propertiesToSkip));
+        // Validate toName attribute
+        const toNameValidation = validateToNameTag(child, model, flatTree);
+
+        if (toNameValidation !== null) validationResult.push(toNameValidation);
+
+        // Validate by parentUnexpected parent tag
+        const parentValidation = validateParentTag(child, model);
+
+        if (parentValidation !== null) validationResult.push(parentValidation);
+
+        validationResult.push(...validateAttributes(child, model, propertiesToSkip));
+      } catch (e) {
+        validationResult.push(errorBuilder.unknownTag(child.type, child.name, child.type));
+      }
     }
 
     if (validationResult.length) {

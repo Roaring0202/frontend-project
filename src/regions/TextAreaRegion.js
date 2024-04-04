@@ -1,27 +1,27 @@
-import React from "react";
-import { observer } from "mobx-react";
-import { types, getParentOfType } from "mobx-state-tree";
+import React from 'react';
+import { observer } from 'mobx-react';
+import { getParentOfType, types } from 'mobx-state-tree';
 
-import WithStatesMixin from "../mixins/WithStates";
-import NormalizationMixin from "../mixins/Normalization";
-import RegionsMixin from "../mixins/Regions";
-import Registry from "../core/Registry";
-import { TextAreaModel } from "../tags/control/TextArea";
-import { guidGenerator } from "../core/Helpers";
+import NormalizationMixin from '../mixins/Normalization';
+import RegionsMixin from '../mixins/Regions';
+import Registry from '../core/Registry';
+import { TextAreaModel } from '../tags/control/TextArea/TextArea';
+import { guidGenerator } from '../core/Helpers';
 
-import styles from "./TextAreaRegion/TextAreaRegion.module.scss";
-import { HtxTextBox } from "../components/HtxTextBox/HtxTextBox";
+import styles from './TextAreaRegion/TextAreaRegion.module.scss';
+import { HtxTextBox } from '../components/HtxTextBox/HtxTextBox';
+import { FF_DEV_1566, isFF } from '../utils/feature-flags';
 
 const Model = types
-  .model("TextAreaRegionModel", {
+  .model('TextAreaRegionModel', {
     id: types.optional(types.identifier, guidGenerator),
     pid: types.optional(types.string, guidGenerator),
-    type: "textarearegion",
+    type: 'textarearegion',
 
     _value: types.string,
     // states: types.array(types.union(ChoicesModel)),
   })
-  .volatile(self => ({
+  .volatile(() => ({
     classification: true,
     perRegionTags: [],
     results: [],
@@ -33,6 +33,9 @@ const Model = types
     },
     getRegionElement() {
       return document.querySelector(`#TextAreaRegion-${self.id}`);
+    },
+    getOneColor() {
+      return null;
     },
   }))
   .actions(self => ({
@@ -55,18 +58,19 @@ const Model = types
   }));
 
 const TextAreaRegionModel = types.compose(
-  "TextAreaRegionModel",
-  WithStatesMixin,
+  'TextAreaRegionModel',
   RegionsMixin,
   NormalizationMixin,
   Model,
 );
 
-const HtxTextAreaRegionView = ({ item }) => {
+const HtxTextAreaRegionView = ({ item, onFocus }) => {
   const classes = [styles.mark];
-  const params = {};
+  const params = { onFocus: e => onFocus(e, item) };
   const { parent } = item;
   const { relationMode } = item.annotation;
+  const editable = parent.isEditable;
+  const deleteable = parent.isDeleteable;
 
   if (relationMode) {
     classes.push(styles.relation);
@@ -78,7 +82,7 @@ const HtxTextAreaRegionView = ({ item }) => {
     classes.push(styles.highlighted);
   }
 
-  if (parent.editable || parent.transcription) {
+  if (editable || parent.transcription) {
     params.onChange = str => {
       item.setValue(str);
     };
@@ -87,6 +91,7 @@ const HtxTextAreaRegionView = ({ item }) => {
   params.onDelete = item.deleteRegion;
 
   let divAttrs = {};
+
   if (!parent.perregion) {
     divAttrs = {
       onMouseOver: () => {
@@ -103,15 +108,21 @@ const HtxTextAreaRegionView = ({ item }) => {
     };
   }
 
+  const name = `${parent?.name?? ''}:${item.id}`;
+
   return (
     <div {...divAttrs} className={styles.row} data-testid="textarea-region">
       <HtxTextBox
+        isEditable={editable}
+        isDeleteable={deleteable}
         onlyEdit={parent.transcription}
         id={`TextAreaRegion-${item.id}`}
-        className={classes.join(" ")}
+        name={name}
+        className={classes.join(' ')}
         rows={parent.rows}
         text={item._value}
         {...params}
+        ignoreShortcuts={isFF(FF_DEV_1566)}
       />
     </div>
   );
@@ -119,6 +130,6 @@ const HtxTextAreaRegionView = ({ item }) => {
 
 const HtxTextAreaRegion = observer(HtxTextAreaRegionView);
 
-Registry.addTag("textarearegion", TextAreaRegionModel, HtxTextAreaRegion);
+Registry.addTag('textarearegion', TextAreaRegionModel, HtxTextAreaRegion);
 
 export { TextAreaRegionModel, HtxTextAreaRegion };

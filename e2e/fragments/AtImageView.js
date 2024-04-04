@@ -1,44 +1,62 @@
 /* global inject */
 const { I } = inject();
 
-const Helpers = require("../tests/helpers");
+const Helpers = require('../tests/helpers');
 
 module.exports = {
-  _stageSelector: ".konvajs-content",
+  _stageSelector: '.konvajs-content',
   _stageBBox: { x: 0, y: 0, width: 0, height: 0 },
+
+  _toolBarSelector: '.lsf-toolbar',
+  _zoomPresetsSelector: '[title^="Zoom presets"]',
+
+  percToX(xPerc) {
+    return this._stageBBox.width * xPerc / 100;
+  },
+
+  percToY(yPerc) {
+    return this._stageBBox.height * yPerc / 100;
+  },
 
   async grabStageBBox() {
     const bbox = await I.grabElementBoundingRect(this._stageSelector);
+
     return bbox;
   },
 
   async lookForStage() {
+    I.scrollPageToTop();
     const bbox = await I.grabElementBoundingRect(this._stageSelector);
+
     this._stageBBox = bbox;
   },
 
   waitForImage() {
-    I.executeAsyncScript(Helpers.waitForImage);
-    I.waitForVisible("canvas", 5);
+    I.say('Waiting for image to be loaded');
+    I.executeScript(Helpers.waitForImage);
+    I.waitForVisible('canvas', 5);
   },
 
   async getCanvasSize() {
-    const sizes = await I.executeAsyncScript(Helpers.getCanvasSize);
+    const sizes = await I.executeScript(Helpers.getCanvasSize);
+
     return sizes;
   },
 
   async getImageSize() {
-    const sizes = await I.executeAsyncScript(Helpers.getImageSize);
+    const sizes = await I.executeScript(Helpers.getImageSize);
+
     return sizes;
   },
 
   async getImageFrameSize() {
-    const sizes = await I.executeAsyncScript(Helpers.getImageFrameSize);
+    const sizes = await I.executeScript(Helpers.getImageFrameSize);
+
     return sizes;
   },
 
   setZoom(scale, x, y) {
-    I.executeAsyncScript(Helpers.setZoom, scale, x, y);
+    I.executeScript(Helpers.setZoom, [scale, x, y]);
   },
 
   /**
@@ -47,14 +65,14 @@ module.exports = {
    * @param {number} y
    */
   clickKonva(x, y) {
-    I.executeAsyncScript(Helpers.clickKonva, x, y);
+    I.executeScript(Helpers.clickKonva, [x, y]);
   },
   /**
    * Click multiple times on the main Stage
    * @param {number[][]} points
    */
   clickPointsKonva(points) {
-    I.executeAsyncScript(Helpers.clickMultipleKonva, points);
+    I.executeScript(Helpers.clickMultipleKonva, points);
   },
   /**
    * Click multiple times on the main Stage then close Polygon
@@ -62,7 +80,7 @@ module.exports = {
    * @deprecated Use drawByClickingPoints instead
    */
   clickPolygonPointsKonva(points) {
-    I.executeAsyncScript(Helpers.polygonKonva, points);
+    I.executeScript(Helpers.polygonKonva, points);
   },
   /**
    * Dragging between two points
@@ -73,37 +91,52 @@ module.exports = {
    * @deprecated Use drawByDrag instead
    */
   dragKonva(x, y, shiftX, shiftY) {
-    I.executeAsyncScript(Helpers.dragKonva, x, y, shiftX, shiftY);
+    I.executeScript(Helpers.dragKonva, [x, y, shiftX, shiftY]);
   },
 
   /**
-   * Get  pixel color at point
+   * Get pixel color at point
    * @param {number} x
    * @param {number} y
    * @param {number[]} rgbArray
    * @param {number} tolerance
    */
   async hasPixelColor(x, y, rgbArray, tolerance = 3) {
-    const colorPixels = await I.executeAsyncScript(Helpers.getKonvaPixelColorFromPoint, x, y);
+    const colorPixels = await I.executeScript(Helpers.getKonvaPixelColorFromPoint, [x, y]);
     const hasPixel = Helpers.areEqualRGB(rgbArray, colorPixels, tolerance);
+
     return hasPixel;
   },
 
   // Only for debugging
   async whereIsPixel(rgbArray, tolerance = 3) {
-    const points = await I.executeAsyncScript(Helpers.whereIsPixel, rgbArray, tolerance);
+    const points = await I.executeScript(Helpers.whereIsPixel, [rgbArray, tolerance]);
+
     return points;
   },
 
   async countKonvaShapes() {
-    const count = await I.executeAsyncScript(Helpers.countKonvaShapes);
+    const count = await I.executeScript(Helpers.countKonvaShapes);
+
     return count;
+  },
+
+  async isTransformerExist() {
+    const isTransformerExist = await I.executeScript(Helpers.isTransformerExist);
+
+    return isTransformerExist;
+  },
+
+  async isRotaterExist() {
+    const isRotaterExist = await I.executeScript(Helpers.isRotaterExist);
+
+    return isRotaterExist;
   },
 
   /**
    * Mousedown - mousemove - mouseup drawing on the ImageView. Works in couple of lookForStage.
    * @example
-   * async AtImageView.lookForStage();
+   * await  AtImageView.lookForStage();
    * AtImageView.drawByDrag(50, 30, 200, 200);
    * @param x
    * @param y
@@ -111,6 +144,7 @@ module.exports = {
    * @param shiftY
    */
   drawByDrag(x, y, shiftX, shiftY) {
+    I.scrollPageToTop();
     I.moveMouse(this._stageBBox.x + x, this._stageBBox.y + y);
     I.pressMouseDown();
     I.moveMouse(this._stageBBox.x + x + shiftX, this._stageBBox.y + y + shiftY, 3);
@@ -119,43 +153,74 @@ module.exports = {
   /**
    * Click through the list of points on the ImageView. Works in couple of lookForStage.
    * @example
-   * async AtImageView.loolookkForStage();
+   * await  AtImageView.loolookkForStage();
    * AtImageView.drawByClickingPoints([[50,50],[100,50],[100,100],[50,100],[50,50]]);
    * @param {number[][]} points
    */
   drawByClickingPoints(points) {
-    for (const point of points) {
-      I.clickAt(this._stageBBox.x + point[0], this._stageBBox.y + point[1]);
+    const lastPoint = points[points.length - 1];
+    const prevPoints = points.slice(0, points.length - 1);
+
+    I.scrollPageToTop();
+
+    if (prevPoints.length) {
+      for (const point of prevPoints) {
+        I.clickAt(this._stageBBox.x + point[0], this._stageBBox.y + point[1]);
+      }
+      I.wait(0.5); // wait before last click to fix polygons creation
     }
+
+    I.clickAt(this._stageBBox.x + lastPoint[0], this._stageBBox.y + lastPoint[1]);
   },
   /**
    * Mousedown - mousemove - mouseup drawing through the list of points on the ImageView. Works in couple of lookForStage.
    * @example
-   * async AtImageView.lookForStage();
+   * await  AtImageView.lookForStage();
    * AtImageView.drawThroughPoints([[50,50],[200,100],[50,200],[300,300]]);
    * @param {number[][]} points - list of pairs of coords
    * @param {"steps"|"rate"} mode - mode of firing mousemove event
    * @param {number} parameter - parameter for mode
    */
-  drawThroughPoints(points, mode = "steps", parameter = 1) {
+  drawThroughPoints(points, mode = 'steps', parameter = 1) {
+    I.scrollPageToTop();
     const calcSteps = {
       steps: () => parameter,
       rate: (p1, p2) => Math.sqrt(Math.pow(p1[0] - p2[0], 2) + Math.pow(p1[1] - p2[1], 2)) / parameter,
     }[mode];
     const startPoint = points[0];
+
     I.moveMouse(this._stageBBox.x + startPoint[0], this._stageBBox.y + startPoint[1]);
     I.pressMouseDown();
     for (let i = 1; i < points.length; i++) {
       const prevPoint = points[i - 1];
       const curPoint = points[i];
+
       I.moveMouse(this._stageBBox.x + curPoint[0], this._stageBBox.y + curPoint[1], calcSteps(prevPoint, curPoint));
     }
     I.pressMouseUp();
   },
   clickAt(x, y) {
+    I.scrollPageToTop();
+    I.clickAt(this._stageBBox.x + x, this._stageBBox.y + y);
+    I.wait(1); // We gotta  wait here because clicks on the canvas are not processed immediately
+  },
+  dblClickAt(x, y) {
+    I.scrollPageToTop();
+    I.clickAt(this._stageBBox.x + x, this._stageBBox.y + y);
     I.clickAt(this._stageBBox.x + x, this._stageBBox.y + y);
   },
   drawByClick(x, y) {
+    I.scrollPageToTop();
     this.clickAt(x, y);
+  },
+
+  selectPanTool() {
+    I.say('Select pan tool');
+    I.pressKey('H');
+  },
+
+  selectMoveTool() {
+    I.say('Select move tool');
+    I.pressKey('V');
   },
 };

@@ -1,15 +1,15 @@
-import { types } from "mobx-state-tree";
+import { types } from 'mobx-state-tree';
 
 const SeparatedControlMixin = types
   .model()
-  .volatile(self => {
+  .volatile(() => {
     return {
       isSeparated: true,
     };
   })
   .views(self => ({
     get obj() {
-      return self.annotation.names.get(self.toname);
+      return self.annotation?.names.get(self.toname);
     },
 
     get selectedLabels() {

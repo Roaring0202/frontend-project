@@ -1,39 +1,62 @@
-import React, { Fragment } from "react";
-import { observer } from "mobx-react";
-import { types } from "mobx-state-tree";
-import { DragOutlined, ZoomInOutlined, ZoomOutOutlined } from "@ant-design/icons";
+import React, { Fragment } from 'react';
+import { observer } from 'mobx-react';
+import { types } from 'mobx-state-tree';
 
-import BaseTool from "./Base";
-import BasicToolView from "../components/Tools/Basic";
-import ToolMixin from "../mixins/Tool";
+import BaseTool from './Base';
+import ToolMixin from '../mixins/Tool';
+import { Tool } from '../components/Toolbar/Tool';
+import { FlyoutMenu } from '../components/Toolbar/FlyoutMenu';
+import { IconExpand, IconHandTool, IconZoomIn, IconZoomOut } from '../assets/icons';
 
 const ToolView = observer(({ item }) => {
   return (
     <Fragment>
-      <BasicToolView
-        selected={item.selected}
-        icon={<DragOutlined />}
-        tooltip="Move position"
-        onClick={ev => {
+      <Tool
+        active={item.selected}
+        icon={<IconHandTool />}
+        ariaLabel="pan"
+        label="Pan Image"
+        shortcut="H"
+        onClick={() => {
           const sel = item.selected;
+
           item.manager.selectTool(item, !sel);
-          if (item.selected) {
-            const stage = item.obj.stageRef;
-            stage.container().style.cursor = "all-scroll";
-          }
         }}
       />
-      <BasicToolView
-        icon={<ZoomInOutlined />}
-        tooltip="Zoom into the image"
-        onClick={ev => {
+      <Tool
+        icon={<IconZoomIn />}
+        ariaLabel="zoom-in"
+        label="Zoom In"
+        shortcut="ctrl+plus"
+        onClick={() => {
           item.handleZoom(1);
         }}
       />
-      <BasicToolView
-        icon={<ZoomOutOutlined />}
-        tooltip="Zoom out of the image"
-        onClick={ev => {
+      <FlyoutMenu
+        icon={<IconExpand />}
+        items={[
+          {
+            label: 'Zoom to fit',
+            shortcut: 'shift+1',
+            onClick: () => {
+              item.sizeToFit();
+            },
+          },
+          {
+            label: 'Zoom to actual size',
+            shortcut: 'shift+2',
+            onClick: () => {
+              item.sizeToOriginal();
+            },
+          },
+        ]}
+      />
+      <Tool
+        icon={<IconZoomOut />}
+        ariaLabel="zoom-out"
+        label="Zoom Out"
+        shortcut="ctrl+minus"
+        onClick={() => {
           item.handleZoom(-1);
         }}
       />
@@ -42,47 +65,90 @@ const ToolView = observer(({ item }) => {
 });
 
 const _Tool = types
-  .model({
+  .model('ZoomPanTool', {
     // image: types.late(() => types.safeReference(Registry.getModelByTag("image")))
+    group: 'control',
   })
   .views(self => ({
     get viewClass() {
-      return <ToolView item={self} />;
+      return () => <ToolView item={self} />;
+    },
+
+    get stageContainer() {
+      return self.obj.stageRef.container();
     },
   }))
   .actions(self => ({
+    shouldSkipInteractions() {
+      return true;
+    },
+
     mouseupEv() {
-      self.mode = "viewing";
+      self.mode = 'viewing';
+      self.stageContainer.style.cursor = 'grab';
+    },
+
+    updateCursor() {
+      if (!self.selected || !self.obj.stageRef) return;
+
+      self.stageContainer.style.cursor = 'grab';
+    },
+
+    afterUpdateSelected() {
+      self.updateCursor();
     },
 
     handleDrag(ev) {
-      const item = self._manager.obj;
-      let posx = item.zoomingPositionX + ev.movementX;
-      let posy = item.zoomingPositionY + ev.movementY;
+      const item = self.obj;
+      const posx = item.zoomingPositionX + ev.movementX;
+      const posy = item.zoomingPositionY + ev.movementY;
+
       item.setZoomPosition(posx, posy);
     },
 
-    mousemoveEv(ev, [x, y]) {
-      const zoomScale = self._manager.obj.zoomScale;
+    mousemoveEv(ev) {
+      const zoomScale = self.obj.zoomScale;
 
       if (zoomScale <= 1) return;
-      if (self.mode === "moving") self.handleDrag(ev);
+      if (self.mode === 'moving') {
+        self.handleDrag(ev);
+        self.stageContainer.style.cursor = 'grabbing';
+      }
     },
 
-    mousedownEv(ev, [x, y]) {
-      self.mode = "moving";
+    mousedownEv(ev) {
+      // don't pan on right click
+      if (ev.button === 2) return;
+
+      self.mode = 'moving';
+      self.stageContainer.style.cursor = 'grabbing';
     },
 
     handleZoom(val) {
-      const item = self._manager.obj;
+      const item = self.obj;
+
       item.handleZoom(val);
+    },
+
+    sizeToFit() {
+      const item = self.obj;
+
+      item.sizeToFit();
+    },
+
+    sizeToAuto() {
+      const item = self.obj;
+
+      item.sizeToAuto();
+    },
+
+    sizeToOriginal() {
+      const item = self.obj;
+
+      item.sizeToOriginal();
     },
   }));
 
-const Zoom = types.compose(ToolMixin, BaseTool, _Tool);
-
-// Registry.addTool("zoom", Zoom);
+const Zoom = types.compose(_Tool.name, ToolMixin, BaseTool, _Tool);
 
 export { Zoom };
-
-// ImageTools.addTool(ZoomTool);

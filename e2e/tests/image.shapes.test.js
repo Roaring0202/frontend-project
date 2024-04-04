@@ -9,20 +9,20 @@ const {
   polygonKonva,
   dragKonva,
   serialize,
-} = require("./helpers");
+} = require('./helpers');
 
-const assert = require("assert");
+const assert = require('assert');
 
-Feature("Test Image object");
+Feature('Test Image object');
 
-const getConfigWithShape = (shape, props = "") => `
+const getConfigWithShape = (shape, props = '') => `
   <View>
     <Image name="img" value="$image" />
     <${shape} ${props} name="tag" toName="img" />
   </View>`;
 
 const IMAGE =
-  "https://htx-misc.s3.amazonaws.com/opensource/label-studio/examples/images/nick-owuor-astro-nic-visuals-wDifg5xc9Z4-unsplash.jpg";
+  'https://htx-misc.s3.amazonaws.com/opensource/label-studio/examples/images/nick-owuor-astro-nic-visuals-wDifg5xc9Z4-unsplash.jpg';
 
 // precalculated image size on the screen; may change because of different reasons
 const WIDTH = 706;
@@ -30,13 +30,13 @@ const HEIGHT = 882;
 const convertToImageSize = getSizeConvertor(WIDTH, HEIGHT);
 
 const annotationEmpty = {
-  id: "1000",
+  id: '1000',
   result: [],
 };
 
 const shapes = [
   {
-    shape: "KeyPoint",
+    shape: 'KeyPoint',
     props: 'strokeWidth="5"',
     action: clickKonva,
     regions: [
@@ -51,7 +51,7 @@ const shapes = [
     ],
   },
   {
-    shape: "Polygon",
+    shape: 'Polygon',
     action: polygonKonva,
     regions: [
       {
@@ -93,7 +93,7 @@ const shapes = [
     ],
   },
   {
-    shape: "Rectangle",
+    shape: 'Rectangle',
     action: dragKonva,
     regions: [
       {
@@ -107,7 +107,7 @@ const shapes = [
     ],
   },
   {
-    shape: "Ellipse",
+    shape: 'Ellipse',
     action: dragKonva,
     regions: [
       {
@@ -126,29 +126,31 @@ const shapes = [
   },
 ];
 
-// eslint-disable-next-line no-undef
-xScenario("Simple shapes on Image", async function({I, AtImageView}) {
-  for (let shape of shapes) {
+// eslint-disable-next-line no-undef,codeceptjs/no-skipped-tests
+xScenario('Simple shapes on Image', async function({ I, AtImageView, AtSidebar }) {
+  for (const shape of shapes) {
     const params = {
       config: getConfigWithShape(shape.shape, shape.props),
       data: { image: IMAGE },
       annotations: [annotationEmpty],
     };
 
-    I.amOnPage("/");
-    await I.executeAsyncScript(initLabelStudio, params);
+    I.amOnPage('/');
+    await I.executeScript(initLabelStudio, params);
     // canvas won't be initialized fully before the image loads
-    await I.executeAsyncScript(waitForImage);
+    await I.executeScript(waitForImage);
     AtImageView.waitForImage();
-    I.see("0 Regions");
+    AtSidebar.seeRegions(0);
 
-    for (let region of shape.regions) {
+    for (const region of shape.regions) {
       // draw the shape using corresponding helper and params
-      const err = await I.executeAsyncScript(shape.action, ...region.params);
+      const err = await I.executeScript(shape.action, region.params);
+
       if (err) throw new Error(err);
     }
 
     const result = await I.executeScript(serialize);
+
     for (let i = 0; i < shape.regions.length; i++) {
       assert.equal(result[i].type, shape.shape.toLowerCase());
       assert.deepEqual(convertToFixed(result[i].value), convertToImageSize(shape.regions[i].result));

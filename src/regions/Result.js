@@ -1,10 +1,13 @@
-import { types, getParent, getRoot, getSnapshot } from "mobx-state-tree";
-import { guidGenerator } from "../core/Helpers";
-import Registry from "../core/Registry";
-import { AnnotationMixin } from "../mixins/AnnotationMixin";
+import { getParent, getRoot, getSnapshot, types } from 'mobx-state-tree';
+import { guidGenerator } from '../core/Helpers';
+import Registry from '../core/Registry';
+import Tree from '../core/Tree';
+import { AnnotationMixin } from '../mixins/AnnotationMixin';
+import { isDefined } from '../utils/utilities';
+import { FF_DEV_1170, FF_DEV_1372, isFF } from '../utils/feature-flags';
 
 const Result = types
-  .model("Result", {
+  .model('Result', {
     id: types.optional(types.identifier, guidGenerator),
     // pid: types.optional(types.string, guidGenerator),
 
@@ -30,36 +33,43 @@ const Result = types
     to_name: types.late(() => types.reference(types.union(...Registry.objectTypes()))),
     // @todo some general type, maybe just a `string`
     type: types.enumeration([
-      "labels",
-      "hypertextlabels",
-      "paragraphlabels",
-      "rectangle",
-      "keypoint",
-      "polygon",
-      "brush",
-      "ellipse",
-      "rectanglelabels",
-      "keypointlabels",
-      "polygonlabels",
-      "brushlabels",
-      "ellipselabels",
-      "timeserieslabels",
-      "choices",
-      "taxonomy",
-      "textarea",
-      "rating",
-      "pairwise",
+      'labels',
+      'hypertextlabels',
+      'paragraphlabels',
+      'rectangle',
+      'keypoint',
+      'polygon',
+      'brush',
+      'ellipse',
+      'magicwand',
+      'rectanglelabels',
+      'keypointlabels',
+      'polygonlabels',
+      'brushlabels',
+      'ellipselabels',
+      'timeserieslabels',
+      'choices',
+      'datetime',
+      'number',
+      'taxonomy',
+      'textarea',
+      'rating',
+      'pairwise',
+      'videorectangle',
     ]),
     // @todo much better to have just a value, not a hash with empty fields
     value: types.model({
+      datetime: types.maybe(types.string),
+      number: types.maybe(types.number),
       rating: types.maybe(types.number),
       text: types.maybe(types.union(types.string, types.array(types.string))),
-      choices: types.maybe(types.array(types.string)),
+      choices: types.maybe(types.array(types.union(types.string, types.array(types.string)))),
       // pairwise
-      selected: types.maybe(types.enumeration(["left", "right"])),
+      selected: types.maybe(types.enumeration(['left', 'right'])),
       // @todo all other *labels
       labels: types.maybe(types.array(types.string)),
       htmllabels: types.maybe(types.array(types.string)),
+      hypertextlabels: types.maybe(types.array(types.string)),
       paragraphlabels: types.maybe(types.array(types.string)),
       rectanglelabels: types.maybe(types.array(types.string)),
       keypointlabels: types.maybe(types.array(types.string)),
@@ -68,6 +78,7 @@ const Result = types
       brushlabels: types.maybe(types.array(types.string)),
       timeserieslabels: types.maybe(types.array(types.string)),
       taxonomy: types.frozen(), // array of arrays of strings
+      sequence: types.frozen(),
     }),
     // info about object and region
     // meta: types.frozen(),
@@ -75,6 +86,7 @@ const Result = types
   .views(self => ({
     get perRegionStates() {
       const states = self.states;
+
       return states && states.filter(s => s.perregion === true);
     },
 
@@ -90,22 +102,43 @@ const Result = types
       return self.value[self.from_name.valueType];
     },
 
+    mergeMainValue(value) {
+      value =  value?.toJSON ? value.toJSON() : value;
+      const mainValue = self.mainValue?.toJSON?.() ? self.mainValue?.toJSON?.() : self.mainValue;
+
+      if (typeof value !== typeof mainValue) return null;
+      if (self.type.endsWith('labels')) {
+        return value.filter(x => mainValue.includes(x));
+      }
+      return value === mainValue ? value : null;
+    },
+
     get hasValue() {
       const value = self.mainValue;
-      if (!value) return false;
+
+      if (!isDefined(value)) return false;
       if (Array.isArray(value)) return value.length > 0;
       return true;
     },
 
     get editable() {
-      return self.readonly === false && self.annotation.editable === true;
+      // @todo readonly is not defined here, so we have to fix this
+      // @todo and as it's used only in region list view of textarea get rid of this getter
+      if (isFF(FF_DEV_1170)) {
+        // The value of self.area.editable is always false whenever region is locked, so we need to check if it's explicitly readonly on the area.
+        return !self.readonly && self.annotation.editable === true && !self.area.readonly;
+      }
+      return !self.readonly && self.annotation.editable === true && self.area.editable === true;
     },
 
-    getSelectedString(joinstr = " ") {
-      return self.mainValue?.join(joinstr) || "";
+    getSelectedString(joinstr = ' ') {
+      return self.mainValue?.join(joinstr) || '';
     },
 
     get selectedLabels() {
+      if (self.mainValue?.length === 0 && self.from_name.allowempty) {
+        return self.from_name.findLabel(null);
+      }
       return self.mainValue?.map(value => self.from_name.findLabel(value)).filter(Boolean);
     },
 
@@ -117,15 +150,22 @@ const Result = types
 
       if (control.perregion) {
         const label = control.whenlabelvalue;
+
         if (label && !self.area.hasLabel(label)) return false;
       }
 
-      if (control.visiblewhen === "choice-selected") {
+      const isChoiceSelected = () => {
         const tagName = control.whentagname;
-        const choiceValues = control.whenchoicevalue ? control.whenchoicevalue.split(",") : null;
-        const results = self.annotation.results.filter(r => r.type === "choices" && r !== self);
+        const choiceValues = control.whenchoicevalue ? control.whenchoicevalue.split(',') : null;
+        const results = self.annotation.results.filter(r => r.type === 'choices' && r !== self);
+
         if (tagName) {
-          const result = results.find(r => r.from_name.name === tagName);
+          const result = results.find(r => {
+            if (r.from_name.name !== tagName) return false;
+            // for perRegion choices we should check that they are in the same area
+            return !r.from_name.perregion || r.area === self.area;
+          });
+
           if (!result) return false;
           if (choiceValues && !choiceValues.some(v => result.mainValue.includes(v))) return false;
         } else {
@@ -133,6 +173,13 @@ const Result = types
           // if no given choice value is selected in any choice result
           if (choiceValues && !choiceValues.some(v => results.some(r => r.mainValue.includes(v)))) return false;
         }
+        return true;
+      };
+
+      if (control.visiblewhen === 'choice-selected') {
+        return isChoiceSelected();
+      } else if (isFF(FF_DEV_1372) && control.visiblewhen === 'choice-unselected') {
+        return !isChoiceSelected();
       }
 
       return true;
@@ -140,6 +187,7 @@ const Result = types
 
     get tag() {
       const value = self.mainValue;
+
       if (!value || !value.length) return null;
       if (!self.from_name.findLabel) return null;
       return self.from_name.findLabel(value[0]);
@@ -148,24 +196,37 @@ const Result = types
     get style() {
       if (!self.tag) return null;
       const fillcolor = self.tag.background || self.tag.parent.fillcolor;
+
       if (!fillcolor) return null;
       const strokecolor = self.tag.background || self.tag.parent.strokecolor;
       const { strokewidth, fillopacity, opacity } = self.tag.parent;
+
       return { strokecolor, strokewidth, fillcolor, fillopacity, opacity };
     },
+
     get emptyStyle() {
-      if (!self.from_name.findLabel) return null;
-      const emptyLabel = self.from_name.findLabel(null);
+      const emptyLabel = self.from_name.emptyLabel;
+
       if (!emptyLabel) return null;
       const fillcolor = emptyLabel.background || emptyLabel.parent.fillcolor;
+
       if (!fillcolor) return null;
       const strokecolor = emptyLabel.background || emptyLabel.parent.strokecolor;
       const { strokewidth, fillopacity, opacity } = emptyLabel.parent;
+
+      return { strokecolor, strokewidth, fillcolor, fillopacity, opacity };
+    },
+
+    get controlStyle() {
+      if (!self.from_name) return null;
+
+      const { fillcolor, strokecolor, strokewidth, fillopacity, opacity } = self.from_name;
+
       return { strokecolor, strokewidth, fillcolor, fillopacity, opacity };
     },
   }))
-  .volatile(self => ({
-    pid: "",
+  .volatile(() => ({
+    pid: '',
     selected: false,
     // highlighted: types.optional(types.boolean, false),
   }))
@@ -193,32 +254,50 @@ const Result = types
     // label, becuase it takes color from the label
     updateAppearenceFromState() {},
 
-    serialize() {
-      const { from_name, to_name, type, score, value } = getSnapshot(self);
+    serialize(options) {
+      const { type, score, value, ...sn } = getSnapshot(self);
       const { valueType } = self.from_name;
-      const data = self.area ? self.area.serialize() : {};
+      const data = self.area ? self.area.serialize(options) : {};
+      // cut off annotation id
+      const id = self.area?.cleanId;
+      const from_name = Tree.cleanUpId(sn.from_name);
+      const to_name = Tree.cleanUpId(sn.to_name);
+
       if (!data) return null;
       if (!self.isSubmitable) return null;
-      // cut off annotation id
-      const id = self.area.cleanId;
-      if (!data.value) data.value = {};
+
+      if (!isDefined(data.value)) data.value = {};
+      // with `mergeLabelsAndResults` control uses only one result even with external `Labels`
+      if (self.to_name.mergeLabelsAndResults) {
+        if (type === 'labels') return null;
+        // add labels to the main region, not nested ones
+        if (self.area?.labels?.length && !self.from_name.perregion) data.value.labels = self.area.labels;
+      }
 
       const contolMeta = self.from_name.metaValue;
+
       if (contolMeta) {
         data.meta = { ...data.meta, ...contolMeta };
       }
       const areaMeta = self.area.meta;
+
       if (areaMeta && Object.keys(areaMeta).length) {
         data.meta = { ...data.meta, ...areaMeta };
       }
 
       if (self.area.parentID) {
-        data.parentID = self.area.parentID.replace(/#.*/, "");
+        data.parentID = self.area.parentID.replace(/#.*/, '');
       }
 
-      Object.assign(data, { id, from_name, to_name, type });
-      value[valueType] && Object.assign(data.value, { [valueType]: value[valueType] });
-      if (typeof score === "number") data.score = score;
+      Object.assign(data, { id, from_name, to_name, type, origin: self.area.origin });
+
+      if (isDefined(value[valueType])) {
+        Object.assign(data.value, { [valueType]: value[valueType] });
+      }
+
+      if (typeof score === 'number') data.score = score;
+
+      if (!self.editable) data.readonly = true;
 
       return data;
     },
@@ -232,10 +311,10 @@ const Result = types
           to_name: parent.name,
           source: parent.value,
           type: control.type,
-          parent_id: self.parentID === "" ? null : self.parentID,
+          parent_id: self.parentID === '' ? null : self.parentID,
         };
 
-        if (self.normalization) tree["normalization"] = self.normalization;
+        if (self.normalization) tree['normalization'] = self.normalization;
 
         return tree;
       };
@@ -244,6 +323,7 @@ const Result = types
         return self.states
           .map(s => {
             const ser = self.serialize(s, parent);
+
             if (!ser) return null;
 
             const tree = {
@@ -279,7 +359,7 @@ const Result = types
 
       self.annotation.relationStore.deleteNodeRelation(self);
 
-      if (self.type === "polygonregion") {
+      if (self.type === 'polygonregion') {
         self.destroyRegion();
       }
 
@@ -289,11 +369,11 @@ const Result = types
     },
 
     setHighlight(val) {
-      self.highlighted = val;
+      self._highlighted = val;
     },
 
     toggleHighlight() {
-      self.setHighlight(!self.highlighted);
+      self.setHighlight(!self._highlighted);
     },
 
     toggleHidden() {

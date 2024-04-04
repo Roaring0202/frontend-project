@@ -1,4 +1,5 @@
 /* eslint-disable @typescript-eslint/no-empty-function */
+/* eslint-disable @typescript-eslint/no-unused-vars */
 
 /**
  * Callback on submit annotation
@@ -9,7 +10,6 @@ function onSubmitAnnotation() {}
  * Callback on update annotation
  */
 function onUpdateAnnotation() {}
-
 /**
  * Callback on delete annotation
  */
@@ -19,6 +19,11 @@ function onDeleteAnnotation() {}
  * Callback on skip task
  */
 function onSkipTask() {}
+
+/**
+ * Callback on unskip task
+ */
+function onUnskipTask() {}
 
 /**
  * Callback on task load
@@ -67,6 +72,10 @@ function onStorageInitialized(ls) {}
 
 function onSubmitDraft(entity) {}
 
+function onNextTask(nextTaskId) {}
+
+function onPrevTask(prevTaskId) {}
+
 export default {
   onDeleteAnnotation,
   onEntityCreate,
@@ -74,6 +83,7 @@ export default {
   onGroundTruth,
   onLabelStudioLoad,
   onSkipTask,
+  onUnskipTask,
   onSubmitAnnotation,
   onSubmitDraft,
   onTaskLoad,
@@ -81,5 +91,7 @@ export default {
   onSelectAnnotation,
   onAcceptAnnotation,
   onRejectAnnotation,
-  onStorageInitialized
+  onStorageInitialized,
+  onNextTask,
+  onPrevTask,
 };

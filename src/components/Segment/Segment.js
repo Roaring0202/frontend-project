@@ -1,7 +1,7 @@
-import React from "react";
-import { PropTypes } from "prop-types";
+import React from 'react';
+import { PropTypes } from 'prop-types';
 
-import styles from "./Segment.module.scss";
+import styles from './Segment.module.scss';
 
 /**
  * Segment Component
@@ -9,12 +9,14 @@ import styles from "./Segment.module.scss";
 export default class Segment extends React.Component {
   componentDidMount() {
     const { annotation } = this.props;
+
     if (annotation) annotation.updateObjects();
   }
 
   render() {
     let cn = styles.block;
-    if (this.props.className) cn = cn + " " + this.props.className;
+
+    if (this.props.className) cn = cn + ' ' + this.props.className;
 
     return <div className={cn}>{this.props.children}</div>;
   }

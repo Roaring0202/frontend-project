@@ -1,31 +1,31 @@
-import { debounce } from "../../utils/debounce";
-import { wrapArray } from "../../utils/utilities";
-import { Geometry } from "./Geometry";
-import { RelationShape } from "./RelationShape";
-import { DOMWatcher, createPropertyWatcher } from "./watchers";
+import { debounce } from '../../utils/debounce';
+import { wrapArray } from '../../utils/utilities';
+import { Geometry } from './Geometry';
+import { RelationShape } from './RelationShape';
+import { createPropertyWatcher, DOMWatcher } from './watchers';
 
 const parentImagePropsWatch = {
-  parent: ["zoomScale", "zoomingPositionX", "zoomingPositionY"],
+  parent: ['zoomScale', 'zoomingPositionX', 'zoomingPositionY', 'rotation'],
 };
 
 const obtainWatcher = node => {
   switch (node.type) {
-    case "richtextregion":
-    case "audioregion":
-    case "paragraphs":
+    case 'richtextregion':
+    case 'audioregion':
+    case 'paragraphs':
       return DOMWatcher;
-    case "rectangleregion":
-      return createPropertyWatcher(["x", "y", "width", "height", "hidden", parentImagePropsWatch]);
-    case "ellipseregion":
-      return createPropertyWatcher(["x", "y", "radiusX", "radiusY", "rotation", "hidden", parentImagePropsWatch]);
-    case "polygonregion":
-      return createPropertyWatcher(["hidden", { points: ["x", "y"] }, parentImagePropsWatch]);
-    case "keypointregion":
-      return createPropertyWatcher(["x", "y", "hidden", parentImagePropsWatch]);
-    case "brushregion":
-      return createPropertyWatcher(["needsUpdate", "hidden", "touchesLength", parentImagePropsWatch]);
-    case "timeseriesregion":
-      return createPropertyWatcher(["start", "end", { parent: ["zoomedRange"] }]);
+    case 'rectangleregion':
+      return createPropertyWatcher(['x', 'y', 'width', 'height', 'hidden', parentImagePropsWatch]);
+    case 'ellipseregion':
+      return createPropertyWatcher(['x', 'y', 'radiusX', 'radiusY', 'rotation', 'hidden', parentImagePropsWatch]);
+    case 'polygonregion':
+      return createPropertyWatcher(['hidden', { points: ['x', 'y'] }, parentImagePropsWatch]);
+    case 'keypointregion':
+      return createPropertyWatcher(['x', 'y', 'hidden', parentImagePropsWatch]);
+    case 'brushregion':
+      return createPropertyWatcher(['needsUpdate', 'hidden', 'touchesLength', parentImagePropsWatch]);
+    case 'timeseriesregion':
+      return createPropertyWatcher(['start', 'end', { parent: ['zoomedRange'] }]);
     default:
       return null;
   }
@@ -33,7 +33,7 @@ const obtainWatcher = node => {
 
 const createShape = (node, root) => {
   return new RelationShape({
-    root: root,
+    root,
     element: node,
     watcher: obtainWatcher(node),
   });
@@ -42,13 +42,14 @@ const createShape = (node, root) => {
 const connect = (relation, root) => {
   return {
     id: relation.id,
-    label: wrapArray(relation.labels ?? []).join(", "),
-    color: "#fa541c",
+    label: wrapArray(relation.labels ?? []).join(', '),
+    color: '#fa541c',
     direction: relation.direction,
     start: createShape(relation.startNode, root),
     end: createShape(relation.endNode, root),
     onChange(callback) {
       const onChangedCallback = debounce(callback, 50);
+
       this.start.onUpdate(onChangedCallback);
       this.end.onUpdate(onChangedCallback);
     },
@@ -70,6 +71,7 @@ const calculateBBox = (shape, root) => {
 
   return bboxList.map(bbox => {
     const padded = Geometry.padding(bbox, 3);
+
     return {
       ...padded,
       x: padded.x - x,
@@ -110,20 +112,21 @@ const calculateTopPath = ({ x1, y1, w1, x2, y2, w2, limit }) => {
 };
 
 const calculateSidePath = ({ x1, y1, w1, h1, x2, y2, w2, h2, limit }) => {
-  let renderingSide = "left";
+  let renderingSide = 'left';
 
   if (Math.min(x1, x2) - limit < 0) {
-    renderingSide = "right";
+    renderingSide = 'right';
   }
 
   let xs1, xs2, ys1, ys2, l1, l2;
 
-  if (renderingSide === "left") {
+  if (renderingSide === 'left') {
     xs1 = x1;
     ys1 = y1 + h1 * 0.5;
     xs2 = x2;
     ys2 = y2 + h2 * 0.5;
     const left = Math.min(xs1, xs2) - limit;
+
     l1 = Math.min(left, xs1 - limit);
     l2 = Math.min(left, xs2 - limit);
   } else {
@@ -132,6 +135,7 @@ const calculateSidePath = ({ x1, y1, w1, h1, x2, y2, w2, h2, limit }) => {
     xs2 = x2 + w2;
     ys2 = y2 + h2 * 0.5;
     const left = Math.max(xs1, xs2) + limit;
+
     l1 = Math.max(left, xs1 + limit);
     l2 = Math.max(left, xs2 + limit);
   }
@@ -143,7 +147,7 @@ const calculateSidePath = ({ x1, y1, w1, h1, x2, y2, w2, h2, limit }) => {
 
 const buildPathCommand = ({ x1, y1, x2, y2, l1, l2, toEnd, renderingSide }, orientation) => {
   const radius = 5;
-  const vertical = orientation === "vertical";
+  const vertical = orientation === 'vertical';
 
   let px1, py1, px2, py2, px3, py3, px4, py4, sweep, arc1, arc2;
   let ex, ey;
@@ -164,7 +168,7 @@ const buildPathCommand = ({ x1, y1, x2, y2, l1, l2, toEnd, renderingSide }, orie
     // Edge center coordinates
     ex = Math.min(x1, x2) + Math.abs(x2 - x1) / 2;
     ey = l1;
-  } else if (!vertical && renderingSide === "right") {
+  } else if (!vertical && renderingSide === 'right') {
     px1 = x1;
     py1 = y1;
     px2 = l1 - radius;
@@ -180,7 +184,7 @@ const buildPathCommand = ({ x1, y1, x2, y2, l1, l2, toEnd, renderingSide }, orie
     // Edge center coordinates
     ex = l1;
     ey = Math.min(y1, y2) + Math.abs(y2 - y1) / 2;
-  } else if (!vertical && renderingSide === "left") {
+  } else if (!vertical && renderingSide === 'left') {
     px1 = x1;
     py1 = y1;
     px2 = l1 + radius;
@@ -207,7 +211,7 @@ const buildPathCommand = ({ x1, y1, x2, y2, l1, l2, toEnd, renderingSide }, orie
     `L ${px4} ${py4}`,
   ];
 
-  return [pathCommand.join(" "), [ex, ey]];
+  return [pathCommand.join(' '), [ex, ey]];
 };
 
 const calculatePath = (start, end) => {
@@ -238,7 +242,7 @@ const calculatePath = (start, end) => {
     limit,
   });
 
-  const pathCommand = buildPathCommand(coordinates, intersecting ? "horizontal" : "vertical");
+  const pathCommand = buildPathCommand(coordinates, intersecting ? 'horizontal' : 'vertical');
 
   return pathCommand;
 };

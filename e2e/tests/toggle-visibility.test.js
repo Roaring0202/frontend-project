@@ -1,12 +1,12 @@
-/* global Feature, Scenario, locate, DataTable, Data */
+/* global Feature, Scenario, DataTable, Data */
 
-const assert = require("assert");
-const { initLabelStudio, countKonvaShapes, switchRegionTreeView } = require("./helpers");
+const assert = require('assert');
+const { initLabelStudio, countKonvaShapes, switchRegionTreeView } = require('./helpers');
 
-const ALL_VISIBLE_SELECTOR = ".lsf-entities__visibility [aria-label=eye]";
-const ALL_HIDDEN_SELECTOR = ".lsf-entities__visibility [aria-label=eye-invisible]";
-const ONE_VISIBLE_SELECTOR = ".lsf-region-item__toggle [aria-label=eye]";
-const ONE_HIDDEN_SELECTOR = ".lsf-region-item__toggle [aria-label=eye-invisible]";
+const ALL_VISIBLE_SELECTOR = '.lsf-entities__visibility:not(.lsf-entities__visibility_hidden)';
+const ALL_HIDDEN_SELECTOR = '.lsf-entities__visibility.lsf-entities__visibility_hidden';
+const ONE_VISIBLE_SELECTOR = '.lsf-region-item__toggle.lsf-region-item__toggle_active';
+const ONE_HIDDEN_SELECTOR = '.lsf-region-item__toggle:not(.lsf-region-item__toggle_active)';
 
 const config = `
 <View>
@@ -20,15 +20,16 @@ const config = `
 
 const data = {
   image:
-    "https://htx-misc.s3.amazonaws.com/opensource/label-studio/examples/images/nick-owuor-astro-nic-visuals-wDifg5xc9Z4-unsplash.jpg",
+    'https://htx-misc.s3.amazonaws.com/opensource/label-studio/examples/images/nick-owuor-astro-nic-visuals-wDifg5xc9Z4-unsplash.jpg',
 };
 
 const createRegion = (from_name, type, values) => ({
   id: createRegion.id++,
-  source: "$image",
+  source: '$image',
   from_name,
-  to_name: "img",
+  to_name: 'img',
   type,
+  origin: 'manual',
   value: {
     height: 10.458911419423693,
     rotation: 0,
@@ -38,23 +39,24 @@ const createRegion = (from_name, type, values) => ({
     ...values,
   },
 });
+
 createRegion.id = 1;
 
 const annotations = [
   {
-    id: "1001",
+    id: '1001',
     lead_time: 15.053,
     result: [
-      createRegion("tag", "rectanglelabels", { rectanglelabels: ["Moonwalker"] }),
-      createRegion("tag", "rectanglelabels", { rectanglelabels: ["Moonwalker"], x: 1 }),
-      createRegion("tag", "rectanglelabels", { rectanglelabels: ["Moonwalker"], y: 60 }),
+      createRegion('tag', 'rectanglelabels', { rectanglelabels: ['Moonwalker'] }),
+      createRegion('tag', 'rectanglelabels', { rectanglelabels: ['Moonwalker'], x: 1 }),
+      createRegion('tag', 'rectanglelabels', { rectanglelabels: ['Moonwalker'], y: 60 }),
     ],
   },
 ];
 
-Feature("Toggle regions visibility");
+Feature('Toggle regions visibility');
 
-Scenario("Checking mass toggling of visibility", async ({I, AtImageView}) => {
+Scenario('Checking mass toggling of visibility', async ({ I, AtImageView, AtSidebar }) => {
   const checkVisible = async num => {
     switch (num) {
       case 0:
@@ -74,7 +76,8 @@ Scenario("Checking mass toggling of visibility", async ({I, AtImageView}) => {
         I.dontSeeElement(ONE_HIDDEN_SELECTOR);
         break;
     }
-    let count = await I.executeAsyncScript(countKonvaShapes);
+    const count = await I.executeScript(countKonvaShapes);
+
     assert.strictEqual(count, num);
   };
   const hideAll = () => {
@@ -90,10 +93,10 @@ Scenario("Checking mass toggling of visibility", async ({I, AtImageView}) => {
     I.click(ONE_HIDDEN_SELECTOR);
   };
 
-  await I.amOnPage("/");
-  I.executeAsyncScript(initLabelStudio, { annotations, config, data });
+  await I.amOnPage('/');
+  I.executeScript(initLabelStudio, { annotations, config, data });
   AtImageView.waitForImage();
-  I.see("3 Regions");
+  AtSidebar.seeRegions(3);
   await checkVisible(3);
   hideOne();
   await checkVisible(2);
@@ -113,19 +116,19 @@ Scenario("Checking mass toggling of visibility", async ({I, AtImageView}) => {
   await checkVisible(0);
 });
 
-Scenario("Hiding bulk visibility toggle", ({I, AtImageView}) => {
-  I.amOnPage("/");
-  I.executeAsyncScript(initLabelStudio, { config, data });
+Scenario('Hiding bulk visibility toggle', ({ I, AtImageView, AtLabels, AtSidebar }) => {
+  I.amOnPage('/');
+  I.executeScript(initLabelStudio, { config, data });
   AtImageView.waitForImage();
-  I.see("0 Regions");
+  AtSidebar.seeRegions(0);
   I.dontSeeElement(ALL_VISIBLE_SELECTOR);
-  I.click(locate(".ant-tag").withText("Planet"));
+  AtLabels.clickLabel('Planet');
   AtImageView.dragKonva(300, 300, 50, 50);
-  I.see("1 Region");
+  AtSidebar.seeRegions(1);
   I.seeElement(ALL_VISIBLE_SELECTOR);
 });
 
-Scenario("Checking regions grouped by label", async ({I, AtImageView}) => {
+Scenario('Checking regions grouped by label', async ({ I, AtImageView }) => {
   const checkVisible = async num => {
     switch (num) {
       case 0:
@@ -145,7 +148,8 @@ Scenario("Checking regions grouped by label", async ({I, AtImageView}) => {
         I.dontSeeElement(ONE_HIDDEN_SELECTOR);
         break;
     }
-    let count = await I.executeAsyncScript(countKonvaShapes);
+    const count = await I.executeScript(countKonvaShapes);
+
     assert.strictEqual(count, num);
   };
   const hideAll = () => {
@@ -161,11 +165,11 @@ Scenario("Checking regions grouped by label", async ({I, AtImageView}) => {
     I.click(ONE_HIDDEN_SELECTOR);
   };
 
-  await I.amOnPage("/");
-  I.executeAsyncScript(initLabelStudio, { annotations, config, data });
+  await I.amOnPage('/');
+  I.executeScript(initLabelStudio, { annotations, config, data });
   AtImageView.waitForImage();
-  I.executeAsyncScript(switchRegionTreeView, "labels");
-  I.see("Labels");
+  I.executeScript(switchRegionTreeView, 'labels');
+  I.see('Labels');
   await checkVisible(3);
   hideOne();
   await checkVisible(2);
@@ -186,34 +190,38 @@ Scenario("Checking regions grouped by label", async ({I, AtImageView}) => {
 });
 
 const examples = [
-  require("../examples/audio-regions"),
-  require("../examples/image-bboxes"),
-  require("../examples/image-ellipses"),
-  require("../examples/image-keypoints"),
-  require("../examples/image-polygons"),
-  require("../examples/ner-url"),
-  require("../examples/nested"),
-  require("../examples/text-html"),
-  require("../examples/text-paragraphs"),
-  require("../examples/timeseries-url-indexed"),
+  require('../examples/audio-regions'),
+  require('../examples/image-bboxes'),
+  require('../examples/image-ellipses'),
+  require('../examples/image-keypoints'),
+  require('../examples/image-polygons'),
+  require('../examples/ner-url'),
+  require('../examples/nested'),
+  require('../examples/text-html'),
+  require('../examples/text-paragraphs'),
+  require('../examples/timeseries-url-indexed'),
 ];
-const examplesTable = new DataTable(["title", "config", "data", "result"]);
+const examplesTable = new DataTable(['title', 'config', 'data', 'result']);
+
 examples.forEach(example => {
   const { annotations, config, data, result = annotations[0].result, title } = example;
+
   examplesTable.add([title, config, data, result]);
 });
 
-Data(examplesTable).Scenario("Check visibility switcher through all examples", ({I, current})=> {
-  const { config, data, result, } = current;
-  const params = { annotations: [{ id: "test", result }], config, data };
+Data(examplesTable).Scenario('Check visibility switcher through all examples', ({ I, AtSidebar, current })=> {
+  const { config, data, result } = current;
+  const params = { annotations: [{ id: 'test', result }], config, data };
 
   const ids = [];
+
   result.forEach(r => !ids.includes(r.id) && Object.keys(r.value).length > 1 && ids.push(r.id));
 
-  I.amOnPage("/");
-  I.executeAsyncScript(initLabelStudio, params);
+  I.amOnPage('/');
+  I.executeScript(initLabelStudio, params);
   const regionsCount = ids.length;
-  I.see(`${regionsCount} Region${(regionsCount === 0 || regionsCount > 1) ? 's' : ''}`);
+
+  AtSidebar.seeRegions(regionsCount);
 
   if (regionsCount) {
     I.seeElement(ALL_VISIBLE_SELECTOR);

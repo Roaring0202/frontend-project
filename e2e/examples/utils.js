@@ -1,5 +1,5 @@
-const xml2js = require("xml2js");
-const builder = require("xmlbuilder");
+const xml2js = require('xml2js');
+const builder = require('xmlbuilder');
 const OPTIONS = {
   headless: true,
   explicitChildren: true,
@@ -10,6 +10,7 @@ const OPTIONS = {
 function parseXml(doc) {
   let document;
   const parser = new xml2js.Parser(OPTIONS);
+
   parser.parseString(doc, function(err, result) {
     document = result;
   });
@@ -20,11 +21,13 @@ function renderXml(doc) {
   const xml = builder.create(rootName, null, null, { headless: true });
   const renderChildren = function(nodes, xml) {
     nodes.forEach(node => {
-      const elem = xml.ele(node["#name"]);
+      const elem = xml.ele(node['#name']);
+
       if (node.$) Object.keys(node.$).forEach(key => elem.att(key, node.$[key]));
       if (node.$$) renderChildren(node.$$, elem);
     });
   };
+
   renderChildren(doc[rootName].$$, xml);
   return xml.end({ pretty: true });
 }
@@ -64,6 +67,7 @@ function xmlFilterNodes(tree, cb) {
     }
   }
   const rootNode = Object.values(tree)[0];
+
   if (cb(rootNode)) {
     filterChildren(rootNode);
   }
@@ -71,7 +75,7 @@ function xmlFilterNodes(tree, cb) {
 }
 
 function xmlTreeHasTag(tree, tagName) {
-  return xmlFindBy(tree, node => node["#name"] === tagName);
+  return xmlFindBy(tree, node => node['#name'] === tagName);
 }
 
 function xmlFindBy(tree, cb) {
@@ -80,6 +84,7 @@ function xmlFindBy(tree, cb) {
     return !!node.$$ && node.$$.find(childNode => findBy(childNode));
   }
   const rootNode = Object.values(tree)[0];
+
   return findBy(rootNode);
 }
 

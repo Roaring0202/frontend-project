@@ -1,17 +1,17 @@
-import React from "react";
-import { observer } from "mobx-react";
-import { Button } from "antd";
+import React from 'react';
+import { observer } from 'mobx-react';
+import { Button } from 'antd';
 import {
-  UndoOutlined,
-  RedoOutlined,
-  SettingOutlined,
-  RollbackOutlined,
-  FullscreenOutlined,
   FullscreenExitOutlined,
-} from "@ant-design/icons";
+  FullscreenOutlined,
+  RedoOutlined,
+  RollbackOutlined,
+  SettingOutlined,
+  UndoOutlined
+} from '@ant-design/icons';
 
-import styles from "./Panel.module.scss";
-import Hint from "../Hint/Hint";
+import styles from './Panel.module.scss';
+import Hint from '../Hint/Hint';
 
 /**
  * Panel component with buttons:
@@ -22,22 +22,23 @@ import Hint from "../Hint/Hint";
  * Settings
  */
 export default observer(({ store }) => {
-  const { history } = store.annotationStore.selected;
+  const annotation = store.annotationStore.selected;
+  const { history } = annotation;
   const classname = [
     styles.block,
     styles.block__controls,
-    store.annotationStore.viewingAllAnnotations ? styles.hidden : "",
-  ].join(" ");
+    store.annotationStore.viewingAllAnnotations ? styles.hidden : '',
+  ].join(' ');
 
   return (
-    <div className={styles.container + " ls-panel"}>
+    <div className={styles.container + ' ls-panel'}>
       <div className={classname}>
         <Button
           type="ghost"
           icon={<UndoOutlined />}
           disabled={!history?.canUndo}
           onClick={ev => {
-            history && history.canUndo && history.undo();
+            annotation?.undo();
             ev.preventDefault();
           }}
         >
@@ -49,7 +50,7 @@ export default observer(({ store }) => {
           disabled={!history?.canRedo}
           icon={<RedoOutlined />}
           onClick={ev => {
-            history && history.canRedo && history.redo();
+            annotation?.redo();
             ev.preventDefault();
           }}
         >
@@ -59,7 +60,7 @@ export default observer(({ store }) => {
           type="ghost"
           disabled={!history?.canUndo}
           icon={<RollbackOutlined />}
-          onClick={ev => {
+          onClick={() => {
             history && history.reset();
           }}
         >
@@ -67,27 +68,27 @@ export default observer(({ store }) => {
         </Button>
         {store.setPrelabeling && (
           <Button
-            style={{ display: "none" }}
-            onClick={ev => {
+            style={{ display: 'none' }}
+            onClick={() => {
               store.resetPrelabeling();
             }}
           >
-            {" "}
+            {' '}
             Reset Prelabeling
           </Button>
         )}
-        {store.hasInterface("debug") && (
+        {store.hasInterface('debug') && (
           <span>
             {history.undoIdx} / {history.history.length}
-            {history.isFrozen && " (frozen)"}
+            {history.isFrozen && ' (frozen)'}
           </span>
         )}
       </div>
 
-      <div className={[styles.block, styles.common].join(" ")}>
+      <div className={[styles.block, styles.common].join(' ')}>
         {store.description && store.showingDescription && (
           <Button
-            onClick={ev => {
+            onClick={() => {
               store.toggleDescription();
             }}
           >
@@ -96,7 +97,7 @@ export default observer(({ store }) => {
         )}
         {store.description && !store.showingDescription && (
           <Button
-            onClick={ev => {
+            onClick={() => {
               store.toggleDescription();
             }}
           >

@@ -1,13 +1,14 @@
-import { types } from "mobx-state-tree";
+import { types } from 'mobx-state-tree';
 
-import Tree from "../core/Tree";
-import { isDefined } from "../utils/utilities";
+import Tree from '../core/Tree';
+import { isDefined } from '../utils/utilities';
+import { FF_DEV_3666, isFF } from '../utils/feature-flags';
 
 const SelectedModelMixin = types
   .model()
-  .volatile(self => {
+  .volatile(() => {
     return {
-      isSeparated: false,
+      isSeparated: false, 
     };
   })
   .views(self => ({
@@ -22,12 +23,14 @@ const SelectedModelMixin = types
     getSelectedColor() {
       // return first selected label color
       const sel = self.tiedChildren.find(c => c.selected === true);
+
       return sel && sel.background;
     },
 
     get selectedColor() {
       // return first selected label color
       const sel = self.tiedChildren.find(c => c.selected === true);
+
       return sel && sel.background;
     },
 
@@ -55,7 +58,7 @@ const SelectedModelMixin = types
       return self.selectedLabels.filter(c => c.alias).map(c => c.alias);
     },
 
-    getSelectedString(joinstr = " ") {
+    getSelectedString(joinstr = ' ') {
       return self.selectedValues().join(joinstr);
     },
 
@@ -63,6 +66,10 @@ const SelectedModelMixin = types
       return self.tiedChildren.find(
         c => (c.alias === value && isDefined(value)) || c.value === value || (!isDefined(c.value) && !isDefined(value)),
       );
+    },
+
+    get emptyLabel() {
+      return self.allowempty ? self.findLabel(null) : null;
     },
   }))
   .actions(self => ({
@@ -74,13 +81,19 @@ const SelectedModelMixin = types
     },
 
     checkMaxUsages() {
-      const list = self.tiedChildren.filter(c => !c.canBeUsed());
-      if (list.length) list.forEach(c => c.setSelected(false));
-      return list;
+      if (isFF(FF_DEV_3666)) {
+        return self.tiedChildren.filter(c => !c.canBeUsed());
+      } else {
+        const list = self.tiedChildren.filter(c => !c.canBeUsed());
+
+        if (list.length) list.forEach(c => c.setSelected(false));
+        return list;
+      }
     },
 
     selectFirstVisible() {
       const f = self.tiedChildren.find(c => c.visible);
+
       f && f.toggleSelected();
 
       return f;
@@ -93,6 +106,7 @@ const SelectedModelMixin = types
     updateFromResult(value) {
       self.unselectAll();
       const values = Array.isArray(value) ? (value.length ? value : [null]) : [value];
+
       if (values.length) {
         values.map(v => self.findLabel(v)).forEach(label => label?.setSelected(true));
       } else if (self.allowempty) {

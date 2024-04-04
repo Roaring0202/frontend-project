@@ -22,6 +22,7 @@ export class EventInvoker {
 
   removeAll(eventName: string) {
     const eventMap = this.getEventMap(eventName);
+
     eventMap.clear();
   }
 
@@ -29,7 +30,7 @@ export class EventInvoker {
     const eventMap = this.getEventMap(eventName);
 
     if (eventMap.size > 0) {
-      eventMap.forEach(clb => clb(...args));
+      return Promise.all([...eventMap].map(fn => fn(...args)));
     }
   }
 
@@ -38,6 +39,7 @@ export class EventInvoker {
 
     if (eventMap.size > 0) {
       const items = Array.from(eventMap);
+
       return items[0](...args);
     }
 

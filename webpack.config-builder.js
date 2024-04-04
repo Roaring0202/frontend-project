@@ -6,12 +6,26 @@ const Dotenv = require("dotenv-webpack");
 const TerserPlugin = require("terser-webpack-plugin");
 const CssMinimizerPlugin = require("css-minimizer-webpack-plugin");
 const SpeedMeasurePlugin = require("speed-measure-webpack-plugin");
+const ESLintPlugin = require('eslint-webpack-plugin');
+const { EnvironmentPlugin, DefinePlugin } = require("webpack");
+
+const workingDirectory = process.env.WORK_DIR
+  ? path.resolve(__dirname, process.env.WORK_DIR)
+  : path.resolve(__dirname, "build");
+
+if (workingDirectory) {
+  console.log(`Working directory set as ${workingDirectory}`)
+}
+
+const customDistDir = !!process.env.WORK_DIR;
 
 const DEFAULT_NODE_ENV = process.env.BUILD_MODULE ? "production" : process.env.NODE_ENV || "development";
 
 const isDevelopment = DEFAULT_NODE_ENV !== "production";
+const isTest = process.env.TEST_ENV === "true";
 
 const BUILD = {
+  NO_SERVER: !!process.env.BUILD_NO_MINIMIZATION || !!process.env.BUILD_NO_SERVER,
   NO_MINIMIZE: isDevelopment || !!process.env.BUILD_NO_MINIMIZATION,
   NO_CHUNKS: isDevelopment || !!process.env.BUILD_NO_CHUNKS,
   NO_HASH: isDevelopment || process.env.BUILD_NO_HASH,
@@ -20,14 +34,17 @@ const BUILD = {
 };
 
 const dirPrefix = {
-  js: isDevelopment ? "" : "static/js/",
-  css: isDevelopment ? "" : "static/css/",
+  js: customDistDir ? "js/" : isDevelopment ? "" : "static/js/",
+  css: customDistDir ? "css/" : isDevelopment ? "" : "static/css/",
 };
 
 const LOCAL_ENV = {
   NODE_ENV: DEFAULT_NODE_ENV,
   CSS_PREFIX: "lsf-",
+  BUILD_NO_SERVER: BUILD.NO_SERVER,
 };
+
+console.log(LOCAL_ENV);
 
 const babelOptimizeOptions = () => {
   return BUILD.NO_MINIMIZE
@@ -44,14 +61,20 @@ const babelOptimizeOptions = () => {
 const optimizer = () => {
   const result = {
     minimize: true,
-    minimizer: [new TerserPlugin(), new CssMinimizerPlugin()],
+    minimizer: [],
     runtimeChunk: true,
-    splitChunks: {
-      cacheGroups: {
-        default: true,
-      }
-    }
   };
+
+  if (DEFAULT_NODE_ENV === 'production') {
+    result.minimizer.push(
+      new TerserPlugin({
+        parallel: true,
+      }),
+      new CssMinimizerPlugin({
+        parallel: true,
+      }),
+    )
+  }
 
   if (BUILD.NO_MINIMIZE) {
     result.minimize = false;
@@ -132,6 +155,11 @@ const babelLoader = {
       "@babel/plugin-proposal-class-properties",
       "@babel/plugin-proposal-optional-chaining",
       "@babel/plugin-proposal-nullish-coalescing-operator",
+      ...(
+        isTest
+          ? ["istanbul"]
+          : []
+      )
     ],
     ...babelOptimizeOptions(),
   },
@@ -152,6 +180,20 @@ const cssLoader = (withLocalIdent = true) => {
     },
   };
 
+  const postcssLoader = {
+    loader: "postcss-loader",
+    options: {
+      sourceMap: true,
+      postcssOptions: {
+        plugins: [
+          require("autoprefixer")({
+            env: "last 4 version"
+          })
+        ]
+      }
+    }
+  }
+
   const stylusLoader = {
     loader: "stylus-loader",
     options: {
@@ -162,45 +204,63 @@ const cssLoader = (withLocalIdent = true) => {
     },
   };
 
-  rules.push(cssLoader, stylusLoader);
+  rules.push(cssLoader, postcssLoader, stylusLoader);
 
   return rules;
 };
 
 const devServer = () => {
-  return process.env.NODE_ENV === "development"
-    ? {
-        devServer: {
-          compress: true,
-          hot: true,
-          port: 9000,
-          stats: "normal",
-          contentBase: path.join(__dirname, "public"),
-          historyApiFallback: {
-            index: "./public/index.html",
-          },
-        },
+  return (DEFAULT_NODE_ENV === 'development' && !BUILD.NO_SERVER) ? {
+    devServer: {
+      compress: true,
+      port: process.env.LSF_PORT ?? 3000,
+      static: {
+        directory: path.join(__dirname, "public")
+      },
+      historyApiFallback: {
+        index: "./public/index.html",
+      },
+      client: {
+        overlay: false,
       }
-    : {};
+    }
+  } : {};
 };
 
 const plugins = [
   new Dotenv({
     path: "./.env",
     safe: true,
+    silent: true,
     allowEmptyValues: true,
     defaults: "./.env.defaults",
   }),
+  new EnvironmentPlugin(LOCAL_ENV),
   new MiniCssExtractPlugin({
     ...cssOutput(),
   }),
   new webpack.EnvironmentPlugin(LOCAL_ENV),
-  new webpack.ProgressPlugin(),
-  new HtmlWebPackPlugin({
-    title: "Label Studio Frontend",
-    template: "public/index.html",
-  }),
 ];
+
+if (isDevelopment) {
+  plugins.push(new ESLintPlugin({
+    fix: false,
+    failOnError: true,
+  }));
+}
+
+if (!BUILD.NO_SERVER) {
+  plugins.push(
+    new HtmlWebPackPlugin({
+      title: "Label Studio Frontend",
+      template: "public/index.html",
+    })
+  )
+}
+
+if (!BUILD.MODULE) {
+  plugins.push(new webpack.ProgressPlugin());
+}
 
 if (BUILD.NO_CHUNKS) {
   babelLoader.options.plugins.unshift("babel-plugin-remove-webpack")
@@ -222,26 +282,45 @@ module.exports = ({withDevServer = true} = {}) => ({
   mode: DEFAULT_NODE_ENV || "development",
   devtool: sourceMap,
   ...(withDevServer ? devServer() : {}),
-  entry: path.resolve(__dirname, "src/index.js"),
+  entry: {
+    main: [
+      path.resolve(__dirname, "src/index.js"),
+    ],
+  },
   output: {
-    path: path.resolve(__dirname, "build"),
+    path: path.resolve(workingDirectory),
     filename: "main.js",
     ...output(),
   },
   resolve: {
     extensions: [".tsx", ".ts", ".js"],
     fallback: {
-      stream: require.resolve("stream-browserify"),
-      timers: require.resolve("timers-browserify"),
-    },
+      fs: false,
+      path: false,
+      crypto: false,
+      worker_threads: false,
+    }
   },
-  plugins: plugins,
+  plugins: withDevServer ? [
+    ...plugins,
+    // new webpack.HotModuleReplacementPlugin(),
+  ] : plugins,
+  experiments: {
+    syncWebAssembly: true,
+    asyncWebAssembly: true,
+  },
   optimization: optimizer(),
   performance: {
     maxEntrypointSize: Infinity,
     maxAssetSize: 1000000,
   },
-  stats: "normal",
+  stats: {
+    errorDetails: true,
+    logging: 'error',
+    chunks: false,
+    cachedAssets: false,
+    orphanModules: false,
+  },
   module: {
     rules: [
       {
@@ -258,7 +337,7 @@ module.exports = ({withDevServer = true} = {}) => ({
       },
       {
         test: /\.css$/i,
-        use: [MiniCssExtractPlugin.loader, "css-loader"],
+        use: [MiniCssExtractPlugin.loader, "css-loader", "postcss-loader"],
       },
       {
         test: /\.styl$/i,
@@ -301,6 +380,7 @@ module.exports = ({withDevServer = true} = {}) => ({
               },
             },
           },
+          "postcss-loader",
           {
             loader: "sass-loader",
             options: {
@@ -332,6 +412,14 @@ module.exports = ({withDevServer = true} = {}) => ({
               ref: true,
             },
           },
+          "url-loader"
+        ],
+      },
+      {
+        test: /\.png$/,
+        exclude: /node_modules/,
+        use: [
+          "url-loader"
         ],
       },
       {
@@ -339,6 +427,15 @@ module.exports = ({withDevServer = true} = {}) => ({
         exclude: /node_modules/,
         loader: "url-loader",
       },
+      {
+        test: /\.wasm$/,
+        type: "javascript/auto",
+        loader: "file-loader",
+        options: {
+          name: "[name].[ext]",
+          outputPath: dirPrefix.js, // colocate wasm with js
+        }
+      }
     ],
   },
 });

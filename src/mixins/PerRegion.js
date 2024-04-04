@@ -1,4 +1,6 @@
-import { types } from "mobx-state-tree";
+import { types } from 'mobx-state-tree';
+import { PER_REGION_MODES } from './PerRegionModes';
+
 
 /*
  * Per Region Mixin
@@ -7,12 +9,18 @@ const PerRegionMixin = types
   .model({
     perregion: types.optional(types.boolean, false),
     whenlabelvalue: types.maybeNull(types.string),
-  })
-  .views(self => ({
+    displaymode: types.optional(types.enumeration(Object.values(PER_REGION_MODES)), PER_REGION_MODES.TAG),
+  }).volatile(() => {
+    return {
+      focusable: false,
+    };
+  },
+  ).views(self => ({
     perRegionVisible() {
       if (!self.perregion) return true;
 
       const region = self.annotation.highlightedNode;
+
       if (!region) {
         // no region is selected return hidden
         return false;
@@ -27,6 +35,7 @@ const PerRegionMixin = types
       return true;
     },
   }))
-  .actions(self => ({}));
+  .actions(() => ({}));
 
 export default PerRegionMixin;
+export { PER_REGION_MODES } from './PerRegionModes';

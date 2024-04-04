@@ -1,19 +1,17 @@
-/* global Feature, Scenario, DataTable, Data, locate */
+/* global Htx, Feature, DataTable, Data, locate */
 
-const { initLabelStudio, hasSelectedRegion } = require("../helpers");
+const { initLabelStudio } = require('../helpers');
 
-const assert = require("assert");
-
-Feature("Select region by click on it");
+Feature('Select region by click on it');
 
 const IMAGE =
-  "https://htx-misc.s3.amazonaws.com/opensource/label-studio/examples/images/nick-owuor-astro-nic-visuals-wDifg5xc9Z4-unsplash.jpg";
+  'https://htx-misc.s3.amazonaws.com/opensource/label-studio/examples/images/nick-owuor-astro-nic-visuals-wDifg5xc9Z4-unsplash.jpg';
 
 const BLUEVIOLET = {
-  color: "#8A2BE2",
+  color: '#8A2BE2',
   rgbArray: [138, 43, 226],
 };
-const getConfigWithShape = (shape, props = "") => `
+const getConfigWithShape = (shape, props = '') => `
   <View>
     <Image name="img" value="$image" zoom="true" zoomBy="1.5" zoomControl="true" rotateControl="true"></Image>
     <${shape}Labels ${props} name="tag" toName="img">
@@ -21,25 +19,10 @@ const getConfigWithShape = (shape, props = "") => `
     </${shape}Labels>
   </View>`;
 
-const hScaleCoords = ([x, y], w, h) => {
-  const ratio = w / h;
-  return [x * ratio, y * ratio];
-};
-const rotateCoords = (point, degree, w, h) => {
-  const [x, y] = point;
-  if (!degree) return point;
-
-  degree = (360 + degree) % 360;
-  if (degree === 90) return hScaleCoords([h - y - 1, x], w, h);
-  if (degree === 270) return hScaleCoords([y, w - x - 1], w, h);
-  if (Math.abs(degree) === 180) return [w - x - 1, h - y - 1];
-  return [x, y];
-};
-
 const shapes = [
   {
-    shape: "Polygon",
-    action: "drawByClickingPoints",
+    shape: 'Polygon',
+    action: 'drawByClickingPoints',
     regions: [
       {
         params: [
@@ -48,15 +31,15 @@ const shapes = [
             [5, 55],
             [55, 55],
             [55, 5],
-            [5, 5]
+            [5, 5],
           ],
         ],
       },
     ],
   },
   {
-    shape: "Rectangle",
-    action: "drawByDrag",
+    shape: 'Rectangle',
+    action: 'drawByDrag',
     regions: [
       {
         params: [5, 5, 55, 55],
@@ -64,27 +47,27 @@ const shapes = [
     ],
   },
   {
-    shape: "Ellipse",
-    action: "drawByDrag",
+    shape: 'Ellipse',
+    action: 'drawByDrag',
     regions: [
       {
         params: [30, 30, 25, 25],
-      }
+      },
     ],
   },
   {
-    shape: "KeyPoint",
+    shape: 'KeyPoint',
     props: 'strokeWidth="5"',
-    action: "drawByClick",
+    action: 'drawByClick',
     regions: [
       {
         params: [30, 30],
-      }
+      },
     ],
   },
   {
-    shape: "Brush",
-    action: "drawThroughPoints",
+    shape: 'Brush',
+    action: 'drawThroughPoints',
     regions: [
       {
         params: [
@@ -102,15 +85,16 @@ const shapes = [
     ],
   },
 ];
-const shapesTable = new DataTable(["shape", "props", "action", "regions"]);
-shapes.forEach(({ shape, props = "", action, regions }) => {
+const shapesTable = new DataTable(['shape', 'props', 'action', 'regions']);
+
+shapes.forEach(({ shape, props = '', action, regions }) => {
   shapesTable.add([shape, props, action, regions]);
 });
 
-function convertParamsToPixels(params, canvasSize, key = "width") {
+function convertParamsToPixels(params, canvasSize, key = 'width') {
   if (Array.isArray(params)) {
     for (const idx in params) {
-      params[idx] = convertParamsToPixels(params[idx], canvasSize, idx % 2 ? "height" : "width");
+      params[idx] = convertParamsToPixels(params[idx], canvasSize, idx % 2 ? 'height' : 'width');
     }
   } else {
     params = canvasSize[key] / 100 * params;
@@ -118,29 +102,38 @@ function convertParamsToPixels(params, canvasSize, key = "width") {
   return params;
 }
 
-Data(shapesTable).Scenario("Selecting after creation", async function({I, AtImageView, current}) {
+Data(shapesTable).Scenario('Selecting after creation', async function({ I, AtImageView, AtSidebar, current }) {
   const params = {
     config: getConfigWithShape(current.shape, current.props),
     data: { image: IMAGE },
   };
+  const setSelectAfterCreate = async (state) => {
+    if (Htx.settings.selectAfterCreate !== state) {
+      Htx.settings.toggleSelectAfterCreate();
+    }
+  };
 
-  I.amOnPage("/");
-  await I.executeAsyncScript(initLabelStudio, params);
+  I.amOnPage('/');
+  await I.executeScript(initLabelStudio, params);
+  await I.executeScript(setSelectAfterCreate, false);
+
   AtImageView.waitForImage();
-  I.see("0 Regions");
+  AtSidebar.seeRegions(0);
   await AtImageView.lookForStage();
   const canvasSize = await AtImageView.getCanvasSize();
-  for (let region of current.regions) {
-    I.pressKey("u");
-    I.pressKey("1");
+
+  for (const region of current.regions) {
+    I.pressKey(['u']);
+    I.pressKey('1');
     AtImageView[current.action](...convertParamsToPixels(region.params, canvasSize));
   }
-  I.pressKey("u");
-  if (current.shape === "Brush") {
-    I.click(locate("button.ant-btn-primary").withDescendant(".anticon.anticon-highlight"));
+  I.pressKey(['u']);
+  if (current.shape === 'Brush') {
+    // Switching to the move tool
+    I.pressKey(['v']);
   }
 
   AtImageView.clickAt(canvasSize.width * 0.3, canvasSize.height * 0.3);
-  const selected = await I.executeAsyncScript(hasSelectedRegion);
-  assert.strictEqual(selected, true);
+  I.seeElement(locate('.ant-list-item[class*=\'selected--\']'));
+  I.seeElement(locate('.lsf-entity'));
 });

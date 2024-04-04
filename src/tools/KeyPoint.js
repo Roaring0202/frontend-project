@@ -1,47 +1,56 @@
-import { types } from "mobx-state-tree";
+import { types } from 'mobx-state-tree';
 
-import BaseTool from "./Base";
-import ToolMixin from "../mixins/Tool";
-import { NodeViews } from "../components/Node/Node";
-import { DrawingTool } from "../mixins/DrawingTool";
+import BaseTool from './Base';
+import ToolMixin from '../mixins/Tool';
+import { NodeViews } from '../components/Node/Node';
+import { DrawingTool } from '../mixins/DrawingTool';
+import { FF_DEV_3666, isFF } from '../utils/feature-flags';
 
 const _Tool = types
-  .model({
+  .model('KeyPointTool', {
     default: types.optional(types.boolean, true),
+    group: 'segmentation',
+    shortcut: 'K',
+    smart: true,
   })
-  .views(self => ({
+  .views(() => ({
     get tagTypes() {
       return {
-        stateTypes: "keypointlabels",
-        controlTagTypes: ["keypointlabels", "keypoint"],
+        stateTypes: 'keypointlabels',
+        controlTagTypes: ['keypointlabels', 'keypoint'],
       };
     },
     get viewTooltip() {
-      return "Key point region";
+      return 'Key Point';
     },
     get iconComponent() {
-      return NodeViews.KeyPointRegionModel[1];
+      return self.dynamic
+        ? NodeViews.KeyPointRegionModel.altIcon
+        : NodeViews.KeyPointRegionModel.icon;
     },
   }))
   .actions(self => ({
     clickEv(ev, [x, y]) {
-      const c = self.control;
-      if (c.type === "keypointlabels" && !c.isSelected) return;
+      if (isFF(FF_DEV_3666) && !self.canStartDrawing()) return;
 
-      //if (!self.obj.checkLabels()) return;
+      const c = self.control;
+
+      if (c.type === 'keypointlabels' && !c.isSelected) return;
 
       const keyPoint = self.createRegion({
-        x: x,
-        y: y,
+        x,
+        y,
         width: Number(c.strokewidth),
-        coordstype: "px",
+        coordstype: 'px',
+        dynamic: self.dynamic,
+        negative: self.dynamic && ev.altKey,
       });
+
       keyPoint.setDrawing(false);
+      keyPoint.notifyDrawingFinished();
     },
   }));
 
-const KeyPoint = types.compose(ToolMixin, BaseTool, DrawingTool, _Tool);
-
-// Registry.addTool("keypoint", KeyPoint);
+const KeyPoint = types.compose(_Tool.name, ToolMixin, BaseTool, DrawingTool, _Tool);
 
 export { KeyPoint };

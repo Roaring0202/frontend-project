@@ -1,5 +1,5 @@
-import { wrapArray } from "../../utils/utilities";
-import { Geometry } from "./Geometry";
+import { wrapArray } from '../../utils/utilities';
+import { Geometry } from './Geometry';
 
 /**
  * @type {import("./Geometry").BBox}
@@ -14,6 +14,7 @@ export class BoundingBox {
 
   static bbox(region) {
     const bbox = _detect(region);
+
     return wrapArray(bbox).map(bbox => Object.assign({ ...DEFAULT_BBOX }, bbox));
   }
 
@@ -56,57 +57,92 @@ export class BoundingBox {
 }
 
 const imageRelatedBBox = (region, bbox) => {
-  const imageBbox = Geometry.getDOMBBox(region.parent.imageRef, true);
-  const scaledBBox = Geometry.scaleBBox(bbox, region.parent.zoomScale);
+  const imageBbox = Geometry.getDOMBBox(region.parent.stageRef.content, true);
+  const clampedBbox = Geometry.clampBBox(bbox,
+    { x:0, y:0 },
+    { x:region.parent.stageWidth, y:region.parent.stageHeight },
+  );
+
   return {
-    ...scaledBBox,
-    x: imageBbox.x + scaledBBox.x,
-    y: imageBbox.y + scaledBBox.y,
+    ...clampedBbox,
+    x: imageBbox.x + clampedBbox.x,
+    y: imageBbox.y + clampedBbox.y,
+  };
+};
+
+const stageRelatedBBox = (region, bbox) => {
+  // If there is no stageRef we just wait for it in the next renders
+  if (!region.parent?.stageRef) return null;
+  const imageBbox = Geometry.getDOMBBox(region.parent.stageRef.content, true);
+  const transformedBBox = Geometry.clampBBox(
+    Geometry.modifyBBoxCoords(bbox, region.parent.zoomOriginalCoords),
+    { x:0, y:0 },
+    { x:region.parent.stageWidth, y:region.parent.stageHeight },
+  );
+
+  return {
+    ...transformedBBox,
+    x: imageBbox.x + transformedBBox.x,
+    y: imageBbox.y + transformedBBox.y,
   };
 };
 
 const _detect = region => {
   switch (region.type) {
-    case "textrange":
-    case "richtextregion":
-    case "textarearegion":
-    case "audioregion":
-    case "paragraphs":
-    case "timeseriesregion": {
-      return Geometry.getDOMBBox(region.getRegionElement());
+    case 'textrange':
+    case 'richtextregion':
+    case 'textarearegion':
+    case 'audioregion':
+    case 'paragraphs':
+    case 'timeseriesregion': {
+      const regionBbox = Geometry.getDOMBBox(region.getRegionElement());
+      const container = region.parent?.visibleNodeRef?.current;
+
+      if (container?.tagName === 'IFRAME') {
+        const iframeBbox = Geometry.getDOMBBox(container, true);
+
+        return regionBbox?.map(bbox => ({
+          ...bbox,
+          x: bbox.x + iframeBbox.x,
+          y: bbox.y + iframeBbox.y,
+        })) || null;
+      }
+
+      return regionBbox;
     }
-    case "rectangleregion": {
-      return imageRelatedBBox(
+    case 'rectangleregion': {
+      return stageRelatedBBox(
         region,
         Geometry.getRectBBox(region.x, region.y, region.width, region.height, region.rotation),
       );
     }
-    case "ellipseregion": {
-      return imageRelatedBBox(
+    case 'ellipseregion': {
+      return stageRelatedBBox(
         region,
         Geometry.getEllipseBBox(region.x, region.y, region.radiusX, region.radiusY, region.rotation),
       );
     }
-    case "polygonregion": {
-      return imageRelatedBBox(region, Geometry.getPolygonBBox(region.points));
+    case 'polygonregion': {
+      return stageRelatedBBox(region, Geometry.getPolygonBBox(region.points));
     }
-    case "keypointregion": {
+    case 'keypointregion': {
       const imageBbox = Geometry.getDOMBBox(region.parent.imageRef, true);
       const scale = region.parent.zoomScale;
+
       return {
         x: region.x * scale + imageBbox.x - 2,
         y: region.y * scale + imageBbox.y - 2,
-        width: 4,
-        height: 4,
+        width: region.width,
+        height: region.width,
       };
     }
-    case "brushregion": {
-      return imageRelatedBBox(
+    case 'brushregion': {
+      // If there is no imageData we just wait for the next render
+      const bbox = region.imageData && Geometry.getImageDataBBox(region.imageData.data, region.imageData.width, region.imageData.height);
+
+      return bbox && imageRelatedBBox(
         region,
-        Geometry.scaleBBox(
-          Geometry.getImageDataBBox(region.imageData.data, region.imageData.width, region.imageData.height),
-          1 / region.layerRef.canvas.pixelRatio,
-        ),
+        Geometry.getImageDataBBox(region.imageData.data, region.imageData.width, region.imageData.height),
       );
     }
     default: {

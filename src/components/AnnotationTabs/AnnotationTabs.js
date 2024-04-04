@@ -1,10 +1,10 @@
-import React, { forwardRef, useCallback, useEffect, useRef } from "react";
-import { observer } from "mobx-react";
-import { Userpic } from "../../common/Userpic/Userpic";
-import { Space } from "../../common/Space/Space";
-import { Block, Elem } from "../../utils/bem";
-import "./AnnotationTabs.styl";
-import { LsGrid, LsPlus, LsSparks, LsStar, IconBan } from "../../assets/icons";
+import React, { forwardRef, useCallback, useEffect, useRef } from 'react';
+import { observer } from 'mobx-react';
+import { Userpic } from '../../common/Userpic/Userpic';
+import { Space } from '../../common/Space/Space';
+import { Block, Elem } from '../../utils/bem';
+import './AnnotationTabs.styl';
+import { IconBan, LsGrid, LsPlus, LsSparks, LsStar } from '../../assets/icons';
 
 export const EntityTab = observer(forwardRef(({
   entity,
@@ -21,7 +21,7 @@ export const EntityTab = observer(forwardRef(({
     <Block
       name="entity-tab"
       ref={ref}
-      mod={{selected, bordered}}
+      mod={{ selected, bordered }}
       style={style}
       onClick={e => {
         e.preventDefault();
@@ -35,12 +35,12 @@ export const EntityTab = observer(forwardRef(({
           tag={Userpic}
           showUsername
           username={prediction ? entity.createdBy : null}
-          user={entity.user ?? {email: entity.createdBy}}
-          mod={{prediction}}
-        >{prediction && <LsSparks/>}</Elem>
+          user={entity.user ?? { email: entity.createdBy }}
+          mod={{ prediction }}
+        >{prediction && <LsSparks style={{ width: 16, height: 16 }}/>}</Elem>
 
         <Elem name="identifier">
-          ID {entity.pk ?? entity.id} {isUnsaved && "*"}
+          ID {entity.pk ?? entity.id} {isUnsaved && '*'}
         </Elem>
 
         {displayGroundTruth && entity.ground_truth && (
@@ -74,10 +74,11 @@ export const AnnotationTabs = observer(({
         as.selectAnnotation(entity.id);
       }
     }
-  }, [as],);
+  }, [as]);
 
   const onCreateAnnotation = useCallback(() => {
-    const c = as.addAnnotation({ userGenerate: true });
+    const c = as.createAnnotation();
+
     as.selectAnnotation(c.id);
   }, [as]);
 
@@ -92,6 +93,8 @@ export const AnnotationTabs = observer(({
   if (showPredictions) list.push(...as.predictions);
   if (showAnnotations) list.push(...as.annotations);
 
+  const tabsDisabled = !showPredictions && !showAnnotations && !allowViewAll && !allowCreateNew;
+
   useEffect(() => {
     if (selectedRef.current) {
       const list = listRef.current;
@@ -100,12 +103,12 @@ export const AnnotationTabs = observer(({
 
       list.scrollTo({
         left: xOffset,
-        behavior: "smooth",
+        behavior: 'smooth',
       });
     }
   }, [store.annotationStore.selected, selectedRef, listRef]);
 
-  return visible ? (
+  return (visible && !tabsDisabled) ? (
     <Block
       name="annotation-tabs"
       mod={{ viewAll: allowViewAll, addNew: allowCreateNew }}
@@ -125,7 +128,7 @@ export const AnnotationTabs = observer(({
             entity={entity}
             selected={entity.selected}
             onClick={onAnnotationSelect}
-            displayGroundTruth={store.hasInterface("ground-truth")}
+            displayGroundTruth={store.hasInterface('ground-truth')}
             prediction={entity.type === 'prediction'}
             ref={entity.selected ? selectedRef : undefined}
           />
@@ -133,7 +136,7 @@ export const AnnotationTabs = observer(({
       </Elem>
 
       {allowViewAll && (
-        <Elem tag="button" name="all" mod={{active: as.viewingAll}} onClick={onToggleVisibility}>
+        <Elem tag="button" name="all" mod={{ active: as.viewingAll }} onClick={onToggleVisibility}>
           <LsGrid/>
         </Elem>
       )}

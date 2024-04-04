@@ -1,20 +1,18 @@
-import { types, getParent, getRoot } from "mobx-state-tree";
-import { cloneNode } from "../core/Helpers";
-import { guidGenerator } from "../core/Helpers";
+import { types } from 'mobx-state-tree';
 
 const Region = types.model({
   name: types.string,
 });
 
 export const ImageRegion = types.compose(
-  "Image",
+  'Image',
   Region,
   types
     .model({
       id: types.identifier,
-      type: types.literal("image"),
+      type: types.literal('image'),
     })
-    .actions(self => ({
+    .actions(() => ({
       draw() {
         // console.log("DRAW", self.id);
       },
@@ -22,14 +20,14 @@ export const ImageRegion = types.compose(
 );
 
 export const TextRegion = types.compose(
-  "Text",
+  'Text',
   Region,
   types
     .model({
       id: types.identifier,
-      type: types.literal("text"),
+      type: types.literal('text'),
     })
-    .actions(self => ({
+    .actions(() => ({
       select() {
         // console.log("SELECT", self.id);
       },
@@ -46,7 +44,7 @@ export const TextRegion = types.compose(
 //   type: types.literal(""),
 // });
 
-const TestRaw = types.model("TestRaw", {
+const TestRaw = types.model('TestRaw', {
   regions: types.array(types.union(ImageRegion, TextRegion)),
   // inheritance: types.array(Region), // wrong :(
   meta: types.number,
@@ -59,6 +57,6 @@ const TestMeta = types.model({
   }),
 });
 
-const Test = types.compose("Test", TestRaw, TestMeta);
+const Test = types.compose('Test', TestRaw, TestMeta);
 
 export default Test;

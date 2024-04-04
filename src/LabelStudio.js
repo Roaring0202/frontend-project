@@ -1,13 +1,17 @@
-import { render, unmountComponentAtNode } from "react-dom";
-import App from "./components/App/App";
-import { configureStore } from "./configureStore";
+import { render, unmountComponentAtNode } from 'react-dom';
+import App from './components/App/App';
+import { configureStore } from './configureStore';
 import { LabelStudio as LabelStudioReact } from './Component';
-import { registerPanels } from "./registerPanels";
-import { configure } from "mobx";
-import {EventInvoker} from './utils/events';
+import { registerPanels } from './registerPanels';
+import { configure } from 'mobx';
+import { EventInvoker } from './utils/events';
 import legacyEvents from './core/External';
-import { toCamelCase } from "strman";
-import { isDefined } from "./utils/utilities";
+import { toCamelCase } from 'strman';
+import { isDefined } from './utils/utilities';
+import { Hotkey } from './core/Hotkey';
+import defaultOptions from './defaultOptions';
+import { destroy } from 'mobx-state-tree';
+import { destroy as destroySharedStore } from './mixins/SharedChoiceStore/mixin';
 
 configure({
   isolateGlobalState: true,
@@ -21,12 +25,19 @@ export class LabelStudio {
     this.instances.clear();
   }
 
-  constructor (root, options = {}) {
+  constructor(root, userOptions = {}) {
+    const options = Object.assign({}, defaultOptions, userOptions ?? {});
+
+    if (options.keymap) {
+      Hotkey.setKeymap(options.keymap);
+    }
+
     this.root = root;
     this.events = new EventInvoker();
-    this.supportLgacyEvents(options);
     this.options = options ?? {};
     this.destroy = (() => { /* noop */ });
+
+    this.supportLgacyEvents(options);
     this.createApp();
 
     this.constructor.instances.add(this);
@@ -45,8 +56,9 @@ export class LabelStudio {
   }
 
   async createApp() {
-    const {store, getRoot} = await configureStore(this.options, this.events);
+    const { store, getRoot } = await configureStore(this.options, this.events);
     const rootElement = getRoot(this.root);
+
     this.store = store;
     window.Htx = this.store;
 
@@ -59,19 +71,22 @@ export class LabelStudio {
 
     const destructor = () => {
       unmountComponentAtNode(rootElement);
+      destroySharedStore();
+      destroy(this.store);
     };
 
     this.destroy = destructor;
   }
 
-  supportLgacyEvents(options) {
+  supportLgacyEvents() {
     const keys = Object.keys(legacyEvents);
 
     keys.forEach(key => {
-      const callback = options[key];
+      const callback = this.options[key];
 
       if (isDefined(callback)) {
         const eventName = toCamelCase(key.replace(/^on/, ''));
+
         this.events.on(eventName, callback);
       }
     });

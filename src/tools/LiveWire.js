@@ -1,45 +1,46 @@
-import React from "react";
-import { observer } from "mobx-react";
-import { types } from "mobx-state-tree";
+import React from 'react';
+import { observer } from 'mobx-react';
+import { types } from 'mobx-state-tree';
 
-import BaseTool from "./Base";
-import BasicTool from "../components/Tools/Basic";
-import ToolMixin from "../mixins/Tool";
+import BaseTool from './Base';
+import BasicTool from '../components/Tools/Basic';
+import ToolMixin from '../mixins/Tool';
 
 const ToolView = observer(({ item }) => {
   return (
     <BasicTool
       selected={item.selected}
-      onClick={ev => {
+      onClick={() => {
         item.manager.unselectAll();
         item.setSelected(true);
       }}
-      icon={"scissor"}
+      icon={'scissor'}
     />
   );
 });
 
 const _Tool = types
-  .model({})
+  .model('LiveWireTool', {
+  })
   .views(self => ({
     get viewClass() {
-      return <ToolView item={self} />;
+      return () => <ToolView item={self} />;
     },
   }))
   .actions(self => ({
     mouseupEv() {
-      self.mode = "viewing";
+      self.mode = 'viewing';
     },
 
-    mousemoveEv(ev, [x, y]) {
-      if (self.mode !== "drawing") return;
+    mousemoveEv() {
+      if (self.mode !== 'drawing') return;
     },
 
-    mousedownEv(ev, [x, y]) {
-      self.mode = "drawing";
+    mousedownEv() {
+      self.mode = 'drawing';
     },
   }));
 
-const LiveWire = types.compose(ToolMixin, _Tool, BaseTool);
+const LiveWire = types.compose(_Tool.name, ToolMixin, _Tool, BaseTool);
 
 export { LiveWire };

@@ -1,32 +1,30 @@
-import React from "react";
-import { Rect, Circle } from "react-konva";
-import { observer } from "mobx-react";
-import { types, getParent, hasParent } from "mobx-state-tree";
+import React, { useState } from 'react';
+import { Circle, Rect } from 'react-konva';
+import { observer } from 'mobx-react';
+import { getParent, getRoot, hasParent, types } from 'mobx-state-tree';
 
-import { guidGenerator } from "../core/Helpers";
-import Types from "../core/Types";
-import { defaultStyle } from "../core/Constants";
+import { guidGenerator } from '../core/Helpers';
+import { useRegionStyles } from '../hooks/useRegionColor';
+import { FF_DEV_2431, isFF } from '../utils/feature-flags';
 
 const PolygonPoint = types
-  .model("PolygonPoint", {
+  .model('PolygonPoint', {
     id: types.optional(types.identifier, guidGenerator),
-
-    relativeX: types.optional(types.number, 0),
-    relativeY: types.optional(types.number, 0),
-
-    initX: types.optional(types.number, 0),
-    initY: types.optional(types.number, 0),
 
     x: types.number,
     y: types.number,
 
     index: types.number,
 
-    style: "circle",
-    size: "small",
+    style: 'circle',
+    size: 'small',
   })
-  .volatile(self => ({
+  .volatile(() => ({
     selected: false,
+    relativeX: 0,
+    relativeY: 0,
+    initX: 0,
+    initY: 0,
   }))
   .views(self => ({
     get parent() {
@@ -39,7 +37,7 @@ const PolygonPoint = types
     },
 
     get annotation() {
-      return Types.getParentOfTypeString(self, "Annotation");
+      return getRoot(self).annotationStore.selected;
     },
   }))
   .actions(self => ({
@@ -50,7 +48,7 @@ const PolygonPoint = types
       self.initX = self.x;
       self.initY = self.y;
 
-      if (self.parent.coordstype === "perc") {
+      if (self.parent.coordstype === 'perc') {
         self.relativeX = self.x;
         self.relativeY = self.y;
       } else {
@@ -103,8 +101,9 @@ const PolygonPoint = types
       ev.cancelBubble = true;
 
       const stage = self.stage?.stageRef;
+
       if (!stage) return;
-      stage.container().style.cursor = "crosshair";
+      stage.container().style.cursor = 'crosshair';
 
       /**
        * Check if polygon > 2 points and closed point
@@ -113,7 +112,7 @@ const PolygonPoint = types
 
       const startPoint = ev.target;
 
-      if (self.style === "rectangle") {
+      if (self.style === 'rectangle') {
         startPoint.setX(startPoint.x() - startPoint.width() / 2);
         startPoint.setY(startPoint.y() - startPoint.height() / 2);
       }
@@ -138,10 +137,11 @@ const PolygonPoint = types
       const t = ev.target;
 
       const stage = self.stage?.stageRef;
-      if (!stage) return;
-      stage.container().style.cursor = "default";
 
-      if (self.style === "rectangle") {
+      if (!stage) return;
+      stage.container().style.cursor = 'default';
+
+      if (self.style === 'rectangle') {
         t.setX(t.x() + t.width() / 2);
         t.setY(t.y() + t.height() / 2);
       }
@@ -153,12 +153,17 @@ const PolygonPoint = types
 
       self.parent.setMouseOverStartPoint(false);
     },
+
+    getSkipInteractions() {
+      return self.parent.control.obj.getSkipInteractions();
+    },
   }));
 
 const PolygonPointView = observer(({ item, name }) => {
   if (!item.parent) return;
 
-  const style = item.parent.style || item.parent.tag || defaultStyle;
+  const [draggable, setDraggable] = useState(true);
+  const regionStyles = useRegionStyles(item.parent);
   const sizes = {
     small: 4,
     medium: 8,
@@ -177,7 +182,7 @@ const PolygonPointView = observer(({ item, name }) => {
     item.index === 0
       ? {
         hitStrokeWidth: 12,
-        fill: style.strokecolor || item.primary,
+        fill: regionStyles.strokeColor || item.primary,
         onMouseOver: item.handleMouseOverStartPoint,
         onMouseOut: item.handleMouseOutStartPoint,
       }
@@ -185,6 +190,8 @@ const PolygonPointView = observer(({ item, name }) => {
 
   const dragOpts = {
     onDragMove: e => {
+      if (item.getSkipInteractions()) return false;
+      if (e.target !== e.currentTarget) return;
       let { x, y } = e.target.attrs;
 
       if (x < 0) x = 0;
@@ -195,11 +202,16 @@ const PolygonPointView = observer(({ item, name }) => {
       item._movePoint(x, y);
     },
 
-    onDragStart: e => {
+    onDragStart: () => {
+      if (item.getSkipInteractions()) {
+        setDraggable(false);
+        return false;
+      }
       item.annotation.history.freeze();
     },
 
     onDragEnd: e => {
+      setDraggable(true);
       item.annotation.history.unfreeze();
       e.cancelBubble = true;
     },
@@ -207,20 +219,32 @@ const PolygonPointView = observer(({ item, name }) => {
     onMouseOver: e => {
       e.cancelBubble = true;
       const stage = item.stage?.stageRef;
+
       if (!stage) return;
-      stage.container().style.cursor = "crosshair";
+      stage.container().style.cursor = 'crosshair';
     },
 
-    onMouseOut: e => {
+    onMouseOut: () => {
       const stage = item.stage?.stageRef;
+
       if (!stage) return;
-      stage.container().style.cursor = "default";
+      stage.container().style.cursor = 'default';
+    },
+
+    onTransformEnd(e) {
+      if (e.target !== e.currentTarget) return;
+      const t = e.target;
+
+      t.setAttr('x', 0);
+      t.setAttr('y', 0);
+      t.setAttr('scaleX', 1);
+      t.setAttr('scaleY', 1);
     },
   };
 
-  const fill = item.selected ? "green" : "white";
+  const fill = item.selected ? 'green' : 'white';
 
-  if (item.style === "circle") {
+  if (item.style === 'circle') {
     return (
       <Circle
         key={name}
@@ -230,7 +254,6 @@ const PolygonPointView = observer(({ item, name }) => {
         radius={w}
         fill={fill}
         stroke="black"
-        hitStrokeWidth={20}
         strokeWidth={stroke[item.size]}
         dragOnTop={false}
         strokeScaleEnabled={false}
@@ -240,19 +263,21 @@ const PolygonPointView = observer(({ item, name }) => {
           item.parent.deletePoint(item);
         }}
         onClick={ev => {
+          if (isFF(FF_DEV_2431) && ev.evt.altKey) return item.parent.deletePoint(item);
           if (item.parent.isDrawing && item.parent.points.length === 1) return;
           // don't unselect polygon on point click
           ev.evt.preventDefault();
           ev.cancelBubble = true;
           if (item.parent.mouseOverStartPoint) {
             item.closeStartPoint();
+            item.parent.notifyDrawingFinished();
           } else {
             item.parent.setSelectedPoint(item);
           }
         }}
         {...dragOpts}
         {...startPointAttr}
-        draggable={item.parent.editable}
+        draggable={item.parent.editable && draggable}
       />
     );
   } else {

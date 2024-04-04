@@ -1,29 +1,18 @@
-const webpackDevServer = require("webpack-dev-server");
+const WebpackDevServer = require("webpack-dev-server");
 const webpack = require("webpack");
-const path = require("path");
 
 const config = require("./webpack.config-builder")({
-  withDevServer: false,
+  withDevServer: true,
 });
 
-const port = 3000;
-
-const options = {
-  compress: true,
-  hot: true,
-  inline: true,
-  public: `http://localhost:${port}`,
-  contentBase: path.join(__dirname, "public"),
-  historyApiFallback: {
-    index: "./public/index.html",
-  },
-};
-
-webpackDevServer.addDevServerEntrypoints(config, options);
+config.entry.main.unshift(
+  `webpack-dev-server/client?http://localhost:${config.devServer.port}/`,
+  `webpack/hot/dev-server`,
+);
 
 const compiler = webpack(config);
-const server = new webpackDevServer(compiler, options);
+const server = new WebpackDevServer(config.devServer, compiler);
 
-server.listen(port, "localhost", () => {
-  console.log(`dev server listening on port ${port}`);
+server.startCallback(() => {
+  console.log(`dev server listening on port ${config.devServer.port}`);
 });

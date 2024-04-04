@@ -1,22 +1,21 @@
-import React from "react";
-import arrayMove from "array-move";
-import { List } from "antd";
-import { SortableContainer, SortableElement, sortableHandle } from "react-sortable-hoc";
-import { observer, inject } from "mobx-react";
-import { types } from "mobx-state-tree";
+import React from 'react';
+import arrayMove from 'array-move';
+import { List } from 'antd';
+import { SortableContainer, SortableElement, sortableHandle } from 'react-sortable-hoc';
+import { inject, observer } from 'mobx-react';
+import { types } from 'mobx-state-tree';
 
-import Registry from "../../core/Registry";
-import { guidGenerator } from "../../core/Helpers";
+import Registry from '../../core/Registry';
+import { guidGenerator } from '../../core/Helpers';
 
 const RankerItemModel = types
   .model({
-    backgroundColor: types.optional(types.string, "transparent"),
+    backgroundColor: types.optional(types.string, 'transparent'),
     value: types.maybeNull(types.string),
     _value: types.maybeNull(types.string),
     selected: types.optional(types.boolean, false),
     idx: types.number,
   })
-  .views(self => ({}))
   .actions(self => ({
     setBG(val) {
       self.backgroundColor = val;
@@ -32,20 +31,24 @@ const RankerItemModel = types
   }));
 
 /**
- * Ranker tag, used for ranking models.
+ * The `Ranker` tag is used to rank the results from models. This tag uses the "prediction" field from a labeling task instead of the "data" field to display content for labeling on the interface. Carefully structure your labeling tasks to work with this tag. See [import pre-annotated data](../guide/predictions.html).
  *
- * Ranker has complex mechanics and uses only the "prediction" field from a labeling task. Please verify the information in the labeling task carefully.
+ * Use with the following data types: text.
  *
- * It renders a given list of strings and allows you to drag and reorder them.
- * To see this tag in action you have to import the example JSON below as a task on "Import" page. Save it as a file called example_ranker_tag.json, then upload it.
- * Set up a project with the given configuration and the example JSON file.
+ * The Ranker tag renders a given list of strings and allows you to drag and reorder them.
+ * To see this tag in action:
+ * 1. Save the example JSON below as a file called <code>example_ranker_tag.json</code>.
+ * 2. Upload it as a task on the Label Studio UI.
+ * 3. Set up a project with the given labeling configuration.
  *
  * @example
+ * <!--Labeling configuration for ranking predicted text output from a model -->
  * <View>
  *   <Text name="txt-1" value="$text"></Text>
  *   <Ranker name="ranker-1" toName="txt-1" ranked="true" sortedHighlightColor="red"></Ranker>
  * </View>
  * @example
+ * <!--Example JSON task to use to see the Ranker tag in action -->
  * [{
  *   "data": {
  *     "text": "Some text for the ranker tag"
@@ -66,17 +69,19 @@ const RankerItemModel = types
  *   }]
  * }]
  * @name Ranker
+ * @meta_title Ranker Tag for Model Ranking
+ * @meta_description Customize Label Studio with the Ranker tag to rank the predictions from different models to rank model quality in your machine learning and data science projects.
  * @param {string} name                 - Name of group
- * @param {y|x=} [axis=y]               - Axis direction
+ * @param {y|x} [axis=y]               - Whether to use a vertical or horizantal axis direction for ranking
  * @param {x|y} lockAxis                - Lock axis
- * @param {string} sortedHighlightColor - Sorted color
+ * @param {string} sortedHighlightColor - Sorted color in HTML color name
  */
 const TagAttrs = types.model({
-  axis: types.optional(types.enumeration(["x", "y"]), "y"),
-  lockaxis: types.maybeNull(types.enumeration(["x", "y"])),
+  axis: types.optional(types.enumeration(['x', 'y']), 'y'),
+  lockaxis: types.maybeNull(types.enumeration(['x', 'y'])),
 
   // elementvalue: types.maybeNull(types.string),
-  elementtag: types.optional(types.string, "Text"),
+  elementtag: types.optional(types.string, 'Text'),
   ranked: types.optional(types.boolean, true),
   sortable: types.optional(types.boolean, true),
 
@@ -89,13 +94,12 @@ const TagAttrs = types.model({
 const Model = types
   .model({
     id: types.optional(types.identifier, guidGenerator),
-    type: "ranker",
+    type: 'ranker',
     update: types.optional(types.number, 1),
 
     regions: types.array(RankerItemModel),
     // update: types.optional(types.boolean, false)
   })
-  .views(self => ({}))
   .actions(self => ({
     setUpdate() {
       self.update = self.update + 1;
@@ -104,7 +108,7 @@ const Model = types
     _addRegion(val, idx) {
       const reg = RankerItemModel.create({
         value: val,
-        idx: idx,
+        idx,
         _value: val,
       });
 
@@ -138,7 +142,7 @@ const Model = types
       };
     },
 
-    fromStateJSON(obj, fromModel) {
+    fromStateJSON(obj) {
       obj.value.items.forEach((v, idx) => {
         self._addRegion(v, idx);
       });
@@ -147,13 +151,13 @@ const Model = types
     },
   }));
 
-const RankerModel = types.compose("RankerModel", TagAttrs, Model);
+const RankerModel = types.compose('RankerModel', TagAttrs, Model);
 
 const DragHandle = sortableHandle(() => <div className="drag-handle"></div>);
 
 function isMobileDevice() {
   try {
-    return typeof window.orientation !== "undefined" || navigator.userAgent.indexOf("IEMobile") !== -1;
+    return typeof window.orientation !== 'undefined' || navigator.userAgent.indexOf('IEMobile') !== -1;
   } catch (e) {
     return false;
   }
@@ -161,8 +165,9 @@ function isMobileDevice() {
 
 const SortableText = SortableElement(({ item, value }) => {
   let classNames;
+
   if (isMobileDevice) {
-    classNames = "noselect";
+    classNames = 'noselect';
   }
 
   const map = {
@@ -174,11 +179,11 @@ const SortableText = SortableElement(({ item, value }) => {
   return (
     <div
       style={{
-        padding: "1em",
-        userSelect: "none",
-        display: "flex",
-        alignItems: "center",
-        background: value.selected ? item.sortedhighlightcolor : "transparent",
+        padding: '1em',
+        userSelect: 'none',
+        display: 'flex',
+        alignItems: 'center',
+        background: value.selected ? item.sortedhighlightcolor : 'transparent',
       }}
       className={classNames}
       onClick={ev => {
@@ -209,19 +214,20 @@ const SortableList = SortableContainer(({ item, items }) => {
           value={value}
           color={value.backgroundColor}
           item={item}
-          onClick={ev => {}}
+          onClick={() => {}}
         />
       ))}
     </List>
   );
 });
 
-const HtxRankerView = ({ store, item }) => {
+const HtxRankerView = ({ item }) => {
   const props = {};
+
   if (isMobileDevice()) {
-    props["pressDelay"] = 100;
+    props['pressDelay'] = 100;
   } else {
-    props["distance"] = 7;
+    props['distance'] = 7;
   }
 
   return (
@@ -231,8 +237,8 @@ const HtxRankerView = ({ store, item }) => {
   );
 };
 
-const HtxRanker = inject("store")(observer(HtxRankerView));
+const HtxRanker = inject('store')(observer(HtxRankerView));
 
-Registry.addTag("ranker", RankerModel, HtxRanker);
+Registry.addTag('ranker', RankerModel, HtxRanker);
 
 export { RankerModel, HtxRanker };

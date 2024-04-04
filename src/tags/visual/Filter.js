@@ -1,15 +1,17 @@
-import React from "react";
-import { types, getRoot } from "mobx-state-tree";
-import { observer } from "mobx-react";
-import { Input } from "antd";
+import React from 'react';
+import { types } from 'mobx-state-tree';
+import { observer } from 'mobx-react';
+import { Input } from 'antd';
 
-import ProcessAttrsMixin from "../../mixins/ProcessAttrs";
-import Registry from "../../core/Registry";
-import { AnnotationMixin } from "../../mixins/AnnotationMixin";
+import ProcessAttrsMixin from '../../mixins/ProcessAttrs';
+import Registry from '../../core/Registry';
+import { AnnotationMixin } from '../../mixins/AnnotationMixin';
+import { FF_DEV_3391, isFF } from '../../utils/feature-flags';
 
 /**
- * Add a filter search for a large number of labels.
+ * Use the Filter tag to add a filter search for a large number of labels or choices. Use with the Labels tag or Choices tag.
  * @example
+ * <!-- Add a filter to labels for a named entity recognition task -->
  * <View>
  *   <Filter name="filter" toName="ner"
  *           hotkey="shift+f" minlength="0"
@@ -21,6 +23,8 @@ import { AnnotationMixin } from "../../mixins/AnnotationMixin";
  *   <Text name="text" value="$text" />
  * </View>
  * @name Filter
+ * @meta_title Filter Tag for Filter Search
+ * @meta_description Customize Label Studio with the Filter tag to filter labels to accelerate labeling for machine learning and data science projects.
  * @param {string} [placeholder="Quick Filter"]      - Placeholder text for filter
  * @param {number} [minlength=3]      - Size of the filter
  * @param {string} [style]            - CSS style of the string
@@ -32,16 +36,22 @@ const TagAttrs = types.model({
 
   cleanup: types.optional(types.boolean, true),
 
-  placeholder: types.optional(types.string, "Quick Filter"),
-  minlength: types.optional(types.string, "3"),
+  placeholder: types.optional(types.string, 'Quick Filter'),
+  minlength: types.optional(types.string, '3'),
   hotkey: types.maybeNull(types.string),
 });
 
 const Model = types
   .model({
-    type: "filter",
+    type: 'filter',
     _value: types.maybeNull(types.string),
-    name: types.identifier,
+    ...(isFF(FF_DEV_3391)
+      ? {
+        id: types.identifier,
+        name: types.string,
+      } : {
+        name: types.identifier,
+      }),
     toname: types.maybeNull(types.string),
   })
   .views(self => ({
@@ -63,6 +73,7 @@ const Model = types
 
       tch.forEach(ch => {
         let chval = ch._value;
+
         if (!self.casesensetive) chval = chval.toLowerCase();
 
         if (chval.indexOf(value) !== -1) ch.setVisible(true);
@@ -71,7 +82,8 @@ const Model = types
     },
 
     applyFilterEv(e) {
-      let { value } = e.target;
+      const { value } = e.target;
+
       self._value = value;
 
       self.applyFilter();
@@ -91,19 +103,20 @@ const Model = types
 
     selectFirstElement() {
       const selected = self.toTag.selectFirstVisible();
+
       if (selected && self.cleanup) {
-        self._value = "";
+        self._value = '';
         self.applyFilter();
       }
     },
   }));
 
-const FilterModel = types.compose("FilterModel", Model, TagAttrs, ProcessAttrsMixin, AnnotationMixin);
+const FilterModel = types.compose('FilterModel', Model, TagAttrs, ProcessAttrsMixin, AnnotationMixin);
 
 const HtxFilter = observer(({ item }) => {
   const tag = item.toTag;
 
-  if (tag.type.indexOf("labels") === -1 && tag.type.indexOf("choices") === -1) return null;
+  if (tag.type.indexOf('labels') === -1 && tag.type.indexOf('choices') === -1) return null;
 
   return (
     <Input
@@ -120,6 +133,6 @@ const HtxFilter = observer(({ item }) => {
   );
 });
 
-Registry.addTag("filter", FilterModel, HtxFilter);
+Registry.addTag('filter', FilterModel, HtxFilter);
 
 export { HtxFilter, FilterModel };

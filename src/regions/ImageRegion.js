@@ -1,7 +1,7 @@
-import { types, getParent, getRoot } from "mobx-state-tree";
-import { cloneNode } from "../core/Helpers";
-import { guidGenerator } from "../core/Helpers";
-import { AnnotationMixin } from "../mixins/AnnotationMixin";
+import { getParent, getRoot, types } from 'mobx-state-tree';
+import { cloneNode } from '../core/Helpers';
+import { guidGenerator } from '../core/Helpers';
+import { AnnotationMixin } from '../mixins/AnnotationMixin';
 
 // @todo remove file
 const RegionMixin = types
@@ -10,6 +10,7 @@ const RegionMixin = types
     pid: types.optional(types.string, guidGenerator),
 
     score: types.maybeNull(types.number),
+
     readonly: types.optional(types.boolean, false),
 
     hidden: types.optional(types.boolean, false),
@@ -17,11 +18,12 @@ const RegionMixin = types
     selected: types.optional(types.boolean, false),
     highlighted: types.optional(types.boolean, false),
 
-    parentID: types.optional(types.string, ""),
+    parentID: types.optional(types.string, ''),
   })
   .views(self => ({
     get perRegionStates() {
       const states = self.states;
+
       return states && states.filter(s => s.perregion === true);
     },
 
@@ -38,17 +40,19 @@ const RegionMixin = types
     },
 
     get labelsState() {
-      return self.states.find(s => s.type.indexOf("labels") !== -1);
+      return self.states.find(s => s.type.indexOf('labels') !== -1);
     },
 
     hasLabelState(labelValue) {
       // first of all check if this region implements labels
       // interface
       const s = self.labelsState;
+
       if (!s) return false;
 
       // find that label and check if its selected
       const l = s.findLabel(labelValue);
+
       if (!l || !l.selected) return false;
 
       return true;
@@ -59,20 +63,22 @@ const RegionMixin = types
       self.parentID = id;
     },
 
-    moveTop(size) {},
-    moveBottom(size) {},
-    moveLeft(size) {},
-    moveRight(size) {},
+    // All of the below accept size as an arument
+    moveTop() {},
+    moveBottom() {},
+    moveLeft() {},
+    moveRight() {},
 
-    sizeRight(size) {},
-    sizeLeft(size) {},
-    sizeTop(size) {},
-    sizeBottom(size) {},
+    sizeRight() {},
+    sizeLeft() {},
+    sizeTop() {},
+    sizeBottom() {},
 
     // "web" degree is opposite to mathematical, -90 is 90 actually
     // swapSizes = true when canvas is already rotated at this moment
     rotatePoint(point, degree, swapSizes = true) {
       const { x, y } = point;
+
       if (!degree) return { x, y };
 
       degree = (360 + degree) % 360;
@@ -85,6 +91,7 @@ const RegionMixin = types
       //   const newX = (x - shift) * cos + (y - shift) * sin + shift;
       //   const newY = -(x - shift) * sin + (y - shift) * cos + shift;
       // for ortogonal degrees it's simple:
+
       if (degree === 270) return { x: y, y: (swapSizes ? h : w) - x };
       if (degree === 90) return { x: (swapSizes ? w : h) - y, y: x };
       if (Math.abs(degree) === 180) return { x: w - x, y: h - y };
@@ -102,7 +109,7 @@ const RegionMixin = types
     updateAppearenceFromState() {},
 
     serialize() {
-      console.error("Region class needs to implement serialize");
+      console.error('Region class needs to implement serialize');
     },
 
     toStateJSON() {
@@ -114,10 +121,10 @@ const RegionMixin = types
           to_name: parent.name,
           source: parent.value,
           type: control.type,
-          parent_id: self.parentID === "" ? null : self.parentID,
+          parent_id: self.parentID === '' ? null : self.parentID,
         };
 
-        if (self.normalization) tree["normalization"] = self.normalization;
+        if (self.normalization) tree['normalization'] = self.normalization;
 
         return tree;
       };
@@ -126,6 +133,7 @@ const RegionMixin = types
         return self.states
           .map(s => {
             const ser = self.serialize(s, parent);
+
             if (!ser) return null;
 
             const tree = {
@@ -152,7 +160,8 @@ const RegionMixin = types
     },
 
     updateOrAddState(state) {
-      var foundIndex = self.states.findIndex(s => s.name === state.name);
+      const foundIndex = self.states.findIndex(s => s.name === state.name);
+
       if (foundIndex !== -1) {
         self.states[foundIndex] = cloneNode(state);
         self.updateAppearenceFromState();
@@ -165,15 +174,17 @@ const RegionMixin = types
     // that inside the region states objects and updates that, this
     // function is used to capture the state
     updateSingleState(state) {
-      var foundIndex = self.states.findIndex(s => s.name === state.name);
+      const foundIndex = self.states.findIndex(s => s.name === state.name);
+
       if (foundIndex !== -1) {
         self.states[foundIndex] = cloneNode(state);
 
         // user is updating the label of the region, there might
         // be other states that depend on the value of the region,
         // therefore we need to recheck here
-        if (state.type.indexOf("labels") !== -1) {
+        if (state.type.indexOf('labels') !== -1) {
           const states = self.states.filter(s => s.whenlabelvalue !== null && s.whenlabelvalue !== undefined);
+
           states && states.forEach(s => self.states.remove(s));
         }
 
@@ -218,7 +229,6 @@ const RegionMixin = types
 
     onClickRegion() {
       const annotation = self.annotation;
-      if (!annotation.editable) return;
 
       if (annotation.relationMode) {
         annotation.addRelation(self);
@@ -244,7 +254,7 @@ const RegionMixin = types
 
       self.annotation.relationStore.deleteNodeRelation(self);
 
-      if (self.type === "polygonregion") {
+      if (self.type === 'polygonregion') {
         self.destroyRegion();
       }
 
@@ -254,7 +264,7 @@ const RegionMixin = types
     },
 
     setHighlight(val) {
-      self.highlighted = val;
+      self._highlighted = val;
     },
 
     toggleHighlight() {
