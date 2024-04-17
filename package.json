@@ -158,7 +158,7 @@
     "lodash.get": "^4.4.0",
     "lodash.ismatch": "^4.4.0",
     "lodash.throttle": "^4.1.1",
-    "mini-css-extract-plugin": "^1.4.0",
+    "mini-css-extract-plugin": "^2.9.0",
     "mobx": "^5.15.4",
     "mobx-react": "^6",
     "mobx-state-tree": "^3.16.0",
