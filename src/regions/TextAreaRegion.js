@@ -40,7 +40,7 @@ const Model = types
   }))
   .actions(self => ({
     setValue(val) {
-      if (isFF(FF_LSDV_4712) && (self._value === val || !self.parent.validateValue(val))) return;
+      if (isFF(FF_LSDV_4712) && (self._value === val || !self.parent.validateText(val))) return;
 
       self._value = val;
       self.parent.onChange();
@@ -87,6 +87,10 @@ const HtxTextAreaRegionView = ({ item, onFocus }) => {
   if (editable || parent.transcription) {
     params.onChange = str => {
       item.setValue(str);
+      item.parent.updateLeadTime();
+    };
+    params.onInput = () => {
+      item.parent.countTime();
     };
   }
 

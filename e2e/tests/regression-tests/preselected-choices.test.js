@@ -2,7 +2,7 @@ const assert = require('assert');
 
 Feature('Preselected choices');
 
-Scenario('Make a duplicate of annotation with preselected choices', async ({ I, LabelStudio, AtTopbar })=>{
+Scenario('Make a duplicate of annotation with preselected choices', async ({ I, LabelStudio, AtTopbar }) => {
   const params = {
     config: `
 <View>
@@ -33,9 +33,6 @@ Scenario('Make a duplicate of annotation with preselected choices', async ({ I, 
   };
 
   I.amOnPage('/');
-  LabelStudio.setFeatureFlags({
-    ff_dev_2100_preselected_choices_250422_short: true,
-  });
   LabelStudio.init(params);
   // Try to create copy of current annotation
   AtTopbar.click('[aria-label="Copy Annotation"]');
@@ -55,7 +52,7 @@ Scenario('Make a duplicate of annotation with preselected choices', async ({ I, 
   assert.deepStrictEqual(annotationWithPresetValues[0].value.choices, ['Option 1']);
 });
 
-Scenario('Make a duplicate of empty annotation with preselected choices', async ({ I, LabelStudio, AtTopbar })=>{
+Scenario('Make a duplicate of empty annotation with preselected choices', async ({ I, LabelStudio, AtTopbar }) => {
   const params = {
     config: `
 <View>
@@ -75,9 +72,6 @@ Scenario('Make a duplicate of empty annotation with preselected choices', async 
   };
 
   I.amOnPage('/');
-  LabelStudio.setFeatureFlags({
-    ff_dev_2100_preselected_choices_250422_short: true,
-  });
   LabelStudio.init(params);
   // Try to create copy of current annotation
   AtTopbar.click('[aria-label="Copy Annotation"]');

@@ -11,11 +11,16 @@ import RequiredMixin from '../../mixins/Required';
 import { isDefined } from '../../utils/utilities';
 import ControlBase from './Base';
 import { ReadOnlyControlMixin } from '../../mixins/ReadOnlyMixin';
+import ClassificationBase from './ClassificationBase';
+import PerItemMixin from '../../mixins/PerItem';
+import { FF_LSDV_4583, isFF } from '../../utils/feature-flags';
 
 /**
  * The Number tag supports numeric classification. Use to classify tasks using numbers.
  *
  * Use with the following data types: audio, image, HTML, paragraphs, text, time series, video
+ *
+ * [^FF_LSDV_4583]: `fflag_feat_front_lsdv_4583_multi_image_segmentation_short` should be enabled for `perItem` functionality
  *
  * @example
  * <!--Basic labeling configuration for numeric classification of text -->
@@ -34,9 +39,10 @@ import { ReadOnlyControlMixin } from '../../mixins/ReadOnlyMixin';
  * @param {number} [step=1]                   - Step for value increment/decrement
  * @param {number} [defaultValue]             - Default number value; will be added automatically to result for required fields
  * @param {string} [hotkey]                   - Hotkey for increasing number value
- * @param {boolean} [required=false]          - Whether to require number validation
+ * @param {boolean} [required=false]          - Whether number is required or not
  * @param {string} [requiredMessage]          - Message to show if validation fails
  * @param {boolean} [perRegion]               - Use this tag to classify specific regions instead of the whole object
+ * @param {boolean} [perItem]                 - Use this tag to classify specific items inside the object instead of the whole object[^FF_LSDV_4583]
  * @param {boolean} [slider=false]            - Use slider look instead of input; use min and max to add your constraints
  */
 const TagAttrs = types.model({
@@ -65,113 +71,128 @@ const Model = types
     get holdsState() {
       return isDefined(self.number);
     },
-
-    get result() {
-      if (self.perregion) {
-        const area = self.annotation.highlightedNode;
-
-        if (!area) return null;
-
-        return self.annotation.results.find(r => r.from_name === self && r.area === area);
-      }
-      return self.annotation.results.find(r => r.from_name === self);
-    },
   }))
-  .actions(self => ({
-    getSelectedString() {
-      return self.number + ' star';
-    },
+  .actions(self => {
+    const Super = { validateValue: self.validateValue };
 
-    needsUpdate() {
-      if (self.result) self.number = self.result.mainValue;
-      else self.number = null;
-    },
+    return {
+      validateValue(value) {
+        if (!Super.validateValue(value)) return false;
+        if (!isDefined(value)) return true;
 
-    beforeSend() {
-      if (!isDefined(self.defaultvalue)) return;
+        const errors = [];
 
-      // let's fix only required perRegions
-      if (self.perregion && self.required) {
-        const object = self.annotation.names.get(self.toname);
+        if (isDefined(self.min) && value < self.min) {
+          errors.push(`Value must be greater than or equal to ${self.min}`);
+        }
+        if (isDefined(self.max) && value > self.max) {
+          errors.push(`Value must be less than or equal to ${self.max}`);
+        }
+        if (isDefined(self.step)) {
+          const step = parseFloat(self.step);
+          const basis = isDefined(self.min) ? +self.min : 0;
+          const delta = (value - basis) % step;
 
-        for (const reg of object?.regs ?? []) {
-          // add result with default value to every region of related object without number yet
-          if (!reg.results.some(r => r.from_name === self)) {
-            reg.results.push({
-              area: reg,
-              from_name: self,
-              to_name: object,
-              type: self.resultType,
-              value: {
-                [self.valueType]: +self.defaultvalue,
-              },
-            });
+          if (delta !== 0) {
+            errors.push(`The two nearest valid values are ${value - delta} and ${value - delta + step}`);
           }
         }
-      } else {
+        if (errors.length) {
+          InfoModal.warning(`Number "${value}" is not valid: ${errors.join(', ')}.`);
+          return false;
+        }
+        return true;
+      },
+      getSelectedString() {
+        return self.number + ' star';
+      },
+
+      needsUpdate() {
+        if (self.result) self.number = self.result.mainValue;
+        else self.number = null;
+      },
+
+      beforeSend() {
+        if (!isDefined(self.defaultvalue)) return;
+
+        // let's fix only required perRegions
+        if (self.perregion && self.required) {
+          const object = self.toNameTag;
+
+          for (const reg of object?.allRegs ?? []) {
+          // add result with default value to every region of related object without number yet
+            if (!reg.results.some(r => r.from_name === self)) {
+              reg.results.push({
+                area: reg,
+                from_name: self,
+                to_name: object,
+                type: self.resultType,
+                value: {
+                  [self.valueType]: +self.defaultvalue,
+                },
+              });
+            }
+          }
+        } else {
         // add defaultValue to results for top-level controls
-        if (!isDefined(self.number)) self.setNumber(+self.defaultvalue);
-      }
-    },
-
-    unselectAll() {},
-
-    setNumber(value) {
-      self.number = value;
-
-      if (self.result) {
-        self.result.area.setValue(self);
-      } else {
-        if (self.perregion) {
-          const area = self.annotation.highlightedNode;
-
-          if (!area) return null;
-          area.setValue(self);
-        } else {
-          self.annotation.createResult({}, { number: value }, self, self.toname);
+          if (!isDefined(self.number)) self.setNumber(+self.defaultvalue);
         }
-      }
-    },
+      },
 
-    onChange(e) {
-      const value = +e.target.value;
+      unselectAll() {},
 
-      if (!isNaN(value)) self.setNumber(value);
-    },
+      setNumber(value) {
+        self.number = value;
+        self.updateResult();
+      },
 
-    updateFromResult() {
-      this.needsUpdate();
-    },
+      onChange(e) {
+        const value = +e.target.value;
 
-    requiredModal() {
-      InfoModal.warning(self.requiredmessage || `Number "${self.name}" is required.`);
-    },
-
-    increaseValue() {
-      if (self.number >= Number(self.max)) {
-        self.setNumber(0);
-      } else {
-        if (self.number > 0) {
-          self.setNumber(self.number + 1);
-        } else {
-          self.setNumber(1);
+        if (!isNaN(value)) {
+          self.setNumber(value);
+          // without this line we can have `7` in model field while it's displayed as `007`.
+          // at least it is bad for testing cases
+          e.target.value = isDefined(self.number) ? self.number : '';
         }
-      }
-    },
+      },
 
-    onHotKey() {
-      return self.increaseValue();
-    },
-  }));
+      updateFromResult() {
+        this.needsUpdate();
+      },
+
+      requiredModal() {
+        InfoModal.warning(self.requiredmessage || `Number "${self.name}" is required.`);
+      },
+
+      increaseValue() {
+        if (self.number >= Number(self.max)) {
+          self.setNumber(0);
+        } else {
+          if (self.number > 0) {
+            self.setNumber(self.number + 1);
+          } else {
+            self.setNumber(1);
+          }
+        }
+      },
+
+      onHotKey() {
+        return self.increaseValue();
+      },
+    };
+  });
 
 const NumberModel = types.compose('NumberModel',
   ControlBase,
-  TagAttrs,
-  Model,
+  ClassificationBase,
   RequiredMixin,
   ReadOnlyControlMixin,
   PerRegionMixin,
+  ...(isFF(FF_LSDV_4583) ? [PerItemMixin] : []),
   AnnotationMixin,
+  TagAttrs,
+  Model,
 );
 
 const HtxNumber = inject('store')(

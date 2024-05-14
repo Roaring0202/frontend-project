@@ -24,6 +24,7 @@ export interface SidePanelsProps {
   store: any;
   currentEntity: any;
   showComments: boolean;
+  focusTab: string;
 }
 
 export interface ViewportSize { width: number, height: number }
@@ -55,7 +56,7 @@ export enum JoinOrder {
 export interface PanelBBox {
   order: number;
   width: number;
-  height:  number;
+  height: number;
   left: number;
   top: number;
   relativeLeft: number;
@@ -74,7 +75,7 @@ export interface EventHandlers {
   onGroupHeightResize: (key: string, h: number, t: number) => void;
   onResizeStart: ()=> void;
   onResizeEnd: ()=> void;
-  onPositionChange: (key: string, t: number, l: number, detached: boolean, alignment: Side ) => void;
+  onPositionChange: (key: string, t: number, l: number, detached: boolean, alignment: Side) => void;
   onVisibilityChange: (key: string, visible: boolean) => void;
   onPositionChangeBegin: (key: string, x: number, y: number, side: Side, detached: boolean) => void;
   onSnap: (key: string) => void;
@@ -102,8 +103,13 @@ export type CommonProps = EventHandlers & {
   currentEntity: any,
 }
 
-interface PanelsCollapsed { [Side.left]: boolean, [Side.right]: boolean }
-    
+export interface PanelsCollapsed { [Side.left]: boolean, [Side.right]: boolean }
+
+export type StoredPanelState = {
+  panelData: Record<string, PanelBBox>,
+  collapsedSide: PanelsCollapsed,
+}
+
 export type BaseProps = PanelBBox & CommonProps & {
   name: string,
   top: number,
@@ -124,13 +130,13 @@ export type BaseProps = PanelBBox & CommonProps & {
   dragBottom: boolean,
   lockPanelContents: boolean,
 }
-    
+
 export type Result = {
   detached: BaseProps[],
   left:BaseProps[],
   right:BaseProps[],
 }
-    
+
 export const emptyPanel: PanelBBox = {
   order: 0,
   top: 0,

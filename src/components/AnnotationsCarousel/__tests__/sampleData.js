@@ -2796,11 +2796,10 @@ const annotationStore = {
     'actionType': 'submitted',
   }],
   'viewingAllAnnotations': false,
-  'viewingAllPredictions': false,
   'validation': null,
   'sharedStores': {},
 };
-const commentStore = { 'loading':'list','comments':[] };
+const commentStore = { 'loading': 'list','comments': [] };
 const store = {
   'config': '<View>\\n  <Image name="image" value="$image"/><RectangleLabels name="label" toName="image"><Label value="Airplane" background="green"/><Label value="Car" background="blue"/></RectangleLabels></View>',
   'task': {
@@ -5618,7 +5617,6 @@ const store = {
       'actionType': 'submitted',
     }],
     'viewingAllAnnotations': false,
-    'viewingAllPredictions': false,
     'validation': null,
     'sharedStores': {},
   },

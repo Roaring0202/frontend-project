@@ -12,6 +12,9 @@ import RequiredMixin from '../../mixins/Required';
 import { isDefined } from '../../utils/utilities';
 import ControlBase from './Base';
 import { ReadOnlyControlMixin } from '../../mixins/ReadOnlyMixin';
+import ClassificationBase from './ClassificationBase';
+import PerItemMixin from '../../mixins/PerItem';
+import { FF_LSDV_4583, isFF } from '../../utils/feature-flags';
 
 const FORMAT_FULL = '%Y-%m-%dT%H:%M';
 const FORMAT_DATE = '%Y-%m-%d';
@@ -25,6 +28,9 @@ const zero = n => (n < 10 ? '0' : '') + n;
  * The DateTime tag adds date and time selection to the labeling interface. Use this tag to add a date, timestamp, month, or year to an annotation.
  *
  * Use with the following data types: audio, image, HTML, paragraph, text, time series, video
+ *
+ * [^FF_LSDV_4583]: `fflag_feat_front_lsdv_4583_multi_image_segmentation_short` should be enabled for `perItem` functionality
+ *
  * @example
  * <View>
  *   <Text name="txt" value="$text" />
@@ -45,6 +51,7 @@ const zero = n => (n < 10 ? '0' : '') + n;
  * @param {boolean} [required=false] - Whether datetime is required or not
  * @param {string} [requiredMessage] - Message to show if validation fails
  * @param {boolean} [perRegion]      - Use this option to label regions instead of the whole object
+ * @param {boolean} [perItem]        - Use this option to label items inside the object instead of the whole object[^FF_LSDV_4583]
  */
 const TagAttrs = types.model({
   toname: types.maybeNull(types.string),
@@ -141,17 +148,6 @@ const Model = types
       if (self.max && self.date > self.max) return false;
       return true;
     },
-
-    get result() {
-      if (self.perregion) {
-        const area = self.annotation.highlightedNode;
-
-        if (!area) return null;
-
-        return self.annotation.results.find(r => r.from_name === self && r.area === area);
-      }
-      return self.annotation.results.find(r => r.from_name === self);
-    },
   }))
   .volatile(() => ({
     updateValue: false,
@@ -192,6 +188,9 @@ const Model = types
       years.push(y);
     }
 
+    // every month should have this day, so current day is bad:
+    // on Oct 30th when you change month to February it resets to March
+    date.setDate(1);
     for (let m = 0; m < 12; m++) {
       date.setMonth(m);
       months[m] = monthName(date);
@@ -256,21 +255,6 @@ const Model = types
       }
     },
 
-    updateResult() {
-      if (self.result) {
-        self.result.area.setValue(self);
-      } else {
-        if (self.perregion) {
-          const area = self.annotation.highlightedNode;
-
-          if (!area) return null;
-          area.setValue(self);
-        } else {
-          self.annotation.createResult({}, { datetime: self.datetime }, self, self.toname);
-        }
-      }
-    },
-
     onMonthChange(e) {
       self.month = +e.target.value || undefined;
       self.updateResult();
@@ -309,53 +293,30 @@ const Model = types
     },
   }))
   .actions(self => {
-    const Super = { validate: self.validate };
+    const Super = { validateValue: self.validateValue };
 
     return {
-      validate() {
-        if (!Super.validate()) return false;
+      validateValue(value) {
+        if (!Super.validateValue(value)) return false;
+
+        const errors = [];
+
+        if (!value) return true;
+
+        let date = self.getISODate(value);
+
+        if (self.only?.includes('year')) date = date.slice(0, 4);
 
         const { min, max } = self;
 
-        if (!min && !max) return true;
+        if (min && date < min) errors.push(`min date is ${min}`);
+        if (max && date > max) errors.push(`max date is ${max}`);
 
-        function validateValue(value) {
-          const errors = [];
-
-          if (!value) return true;
-
-          let date = self.getISODate(value);
-
-          if (self.only?.includes('year')) date = date.slice(0, 4);
-
-          if (min && date < min) errors.push(`min date is ${min}`);
-          if (max && date > max) errors.push(`max date is ${max}`);
-
-          if (errors.length) {
-            InfoModal.warning(`Date "${date}" is not valid: ${errors.join(', ')}.`);
-            return false;
-          }
-          return true;
+        if (errors.length) {
+          InfoModal.warning(`Date "${date}" is not valid: ${errors.join(', ')}.`);
+          return false;
         }
-
-        // per-region results are not visible, so we have to check their values
-        if (self.perregion) {
-          const objectTag = self.annotation.names.get(self.toname);
-
-          for (const reg of objectTag.regs) {
-            const date = reg.results.find(s => s.from_name === self)?.mainValue;
-            const isValid = validateValue(date);
-
-            if (!isValid) {
-              self.annotation.selectArea(reg);
-              return false;
-            }
-          }
-
-          return true;
-        } else {
-          return validateValue(self.datetime);
-        }
+        return true;
       },
     };
   });
@@ -363,9 +324,11 @@ const Model = types
 const DateTimeModel = types.compose(
   'DateTimeModel',
   ControlBase,
+  ClassificationBase,
   RequiredMixin,
   ReadOnlyControlMixin,
   PerRegionMixin,
+  ...(isFF(FF_LSDV_4583) ? [PerItemMixin] : []),
   AnnotationMixin,
   TagAttrs,
   Model,
@@ -404,7 +367,7 @@ const HtxDateTime = inject('store')(
     };
 
     return (
-      <div style={visibleStyle}>
+      <div className="htx-datetime" style={visibleStyle}>
         {item.showMonth && (
           <select
             {...visual}

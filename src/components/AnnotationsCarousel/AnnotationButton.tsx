@@ -2,7 +2,7 @@ import { Block, Elem } from '../../utils/bem';
 import { Userpic } from '../../common/Userpic/Userpic';
 import { IconAnnotationGroundTruth, IconAnnotationSkipped2, IconDraftCreated2, IconDuplicate, IconEllipsis, IconTrashRect, LsCommentResolved, LsCommentUnresolved, LsSparks, LsStar, LsStarOutline } from '../../assets/icons';
 import { userDisplayName } from '../../utils/utilities'; 
-import { TimeAgo }  from '../../common/TimeAgo/TimeAgo';
+import { TimeAgo } from '../../common/TimeAgo/TimeAgo';
 import './AnnotationButton.styl';
 import { useCallback, useEffect, useState } from 'react';
 import { Dropdown } from '../../common/Dropdown/Dropdown';
@@ -108,6 +108,7 @@ export const AnnotationButton = observer(({ entity, capabilities, annotationStor
     const isPrediction = entity.type === 'prediction';
     const isDraft = !isDefined(entity.pk);
     const showGroundTruth = capabilities.groundTruthEnabled && !isPrediction && !isDraft;
+    const showDuplicateAnnotation = capabilities.enableCreateAnnotation && !isDraft;
 
     return (
       <Block name="AnnotationButtonContextMenu">
@@ -125,7 +126,7 @@ export const AnnotationButton = observer(({ entity, capabilities, annotationStor
             as Ground Truth
           </Elem>
         )}
-        {!isDraft && (
+        {showDuplicateAnnotation && (
           <Elem name="option" mod={{ duplicate: true }} onClick={duplicateAnnotation}>
             <Elem name="icon">
               <IconDuplicate width={20} height={24} />
@@ -213,7 +214,7 @@ export const AnnotationButton = observer(({ entity, capabilities, annotationStor
       <Elem name='contextMenu'>
         <Dropdown.Trigger
           content={<ContextMenu entity={entity} capabilities={capabilities} annotationStore={annotationStore} />}
-          onToggle={(isVisible)=> setIsContextMenuOpen(isVisible)}
+          onToggle={(isVisible) => setIsContextMenuOpen(isVisible)}
         >
           <Elem name='ellipsisIcon'>
             <IconEllipsis width={28} height={28}/>
