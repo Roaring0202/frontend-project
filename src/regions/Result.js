@@ -1,11 +1,13 @@
-import { getParent, getRoot, getSnapshot, types } from "mobx-state-tree";
-import { guidGenerator } from "../core/Helpers";
-import Registry from "../core/Registry";
-import { AnnotationMixin } from "../mixins/AnnotationMixin";
-import { isDefined } from "../utils/utilities";
+import { getParent, getRoot, getSnapshot, types } from 'mobx-state-tree';
+import { guidGenerator } from '../core/Helpers';
+import Registry from '../core/Registry';
+import Tree from '../core/Tree';
+import { AnnotationMixin } from '../mixins/AnnotationMixin';
+import { isDefined } from '../utils/utilities';
+import { FF_DEV_1170, FF_DEV_1372, isFF } from '../utils/feature-flags';
 
 const Result = types
-  .model("Result", {
+  .model('Result', {
     id: types.optional(types.identifier, guidGenerator),
     // pid: types.optional(types.string, guidGenerator),
 
@@ -31,36 +33,39 @@ const Result = types
     to_name: types.late(() => types.reference(types.union(...Registry.objectTypes()))),
     // @todo some general type, maybe just a `string`
     type: types.enumeration([
-      "labels",
-      "hypertextlabels",
-      "paragraphlabels",
-      "rectangle",
-      "keypoint",
-      "polygon",
-      "brush",
-      "ellipse",
-      "rectanglelabels",
-      "keypointlabels",
-      "polygonlabels",
-      "brushlabels",
-      "ellipselabels",
-      "timeserieslabels",
-      "choices",
-      "number",
-      "taxonomy",
-      "textarea",
-      "rating",
-      "pairwise",
-      "videorectangle",
+      'labels',
+      'hypertextlabels',
+      'paragraphlabels',
+      'rectangle',
+      'keypoint',
+      'polygon',
+      'brush',
+      'ellipse',
+      'magicwand',
+      'rectanglelabels',
+      'keypointlabels',
+      'polygonlabels',
+      'brushlabels',
+      'ellipselabels',
+      'timeserieslabels',
+      'choices',
+      'datetime',
+      'number',
+      'taxonomy',
+      'textarea',
+      'rating',
+      'pairwise',
+      'videorectangle',
     ]),
     // @todo much better to have just a value, not a hash with empty fields
     value: types.model({
+      datetime: types.maybe(types.string),
       number: types.maybe(types.number),
       rating: types.maybe(types.number),
       text: types.maybe(types.union(types.string, types.array(types.string))),
-      choices: types.maybe(types.array(types.string)),
+      choices: types.maybe(types.array(types.union(types.string, types.array(types.string)))),
       // pairwise
-      selected: types.maybe(types.enumeration(["left", "right"])),
+      selected: types.maybe(types.enumeration(['left', 'right'])),
       // @todo all other *labels
       labels: types.maybe(types.array(types.string)),
       htmllabels: types.maybe(types.array(types.string)),
@@ -102,7 +107,7 @@ const Result = types
       const mainValue = self.mainValue?.toJSON?.() ? self.mainValue?.toJSON?.() : self.mainValue;
 
       if (typeof value !== typeof mainValue) return null;
-      if (self.type.endsWith("labels")) {
+      if (self.type.endsWith('labels')) {
         return value.filter(x => mainValue.includes(x));
       }
       return value === mainValue ? value : null;
@@ -111,17 +116,23 @@ const Result = types
     get hasValue() {
       const value = self.mainValue;
 
-      if (!value) return false;
+      if (!isDefined(value)) return false;
       if (Array.isArray(value)) return value.length > 0;
       return true;
     },
 
     get editable() {
-      return self.readonly === false && self.annotation.editable === true;
+      // @todo readonly is not defined here, so we have to fix this
+      // @todo and as it's used only in region list view of textarea get rid of this getter
+      if (isFF(FF_DEV_1170)) {
+        // The value of self.area.editable is always false whenever region is locked, so we need to check if it's explicitly readonly on the area.
+        return !self.readonly && self.annotation.editable === true && !self.area.readonly;
+      }
+      return !self.readonly && self.annotation.editable === true && self.area.editable === true;
     },
 
-    getSelectedString(joinstr = " ") {
-      return self.mainValue?.join(joinstr) || "";
+    getSelectedString(joinstr = ' ') {
+      return self.mainValue?.join(joinstr) || '';
     },
 
     get selectedLabels() {
@@ -143,10 +154,10 @@ const Result = types
         if (label && !self.area.hasLabel(label)) return false;
       }
 
-      if (control.visiblewhen === "choice-selected") {
+      const isChoiceSelected = () => {
         const tagName = control.whentagname;
-        const choiceValues = control.whenchoicevalue ? control.whenchoicevalue.split(",") : null;
-        const results = self.annotation.results.filter(r => r.type === "choices" && r !== self);
+        const choiceValues = control.whenchoicevalue ? control.whenchoicevalue.split(',') : null;
+        const results = self.annotation.results.filter(r => r.type === 'choices' && r !== self);
 
         if (tagName) {
           const result = results.find(r => {
@@ -162,6 +173,13 @@ const Result = types
           // if no given choice value is selected in any choice result
           if (choiceValues && !choiceValues.some(v => results.some(r => r.mainValue.includes(v)))) return false;
         }
+        return true;
+      };
+
+      if (control.visiblewhen === 'choice-selected') {
+        return isChoiceSelected();
+      } else if (isFF(FF_DEV_1372) && control.visiblewhen === 'choice-unselected') {
+        return !isChoiceSelected();
       }
 
       return true;
@@ -198,9 +216,17 @@ const Result = types
 
       return { strokecolor, strokewidth, fillcolor, fillopacity, opacity };
     },
+
+    get controlStyle() {
+      if (!self.from_name) return null;
+
+      const { fillcolor, strokecolor, strokewidth, fillopacity, opacity } = self.from_name;
+
+      return { strokecolor, strokewidth, fillcolor, fillopacity, opacity };
+    },
   }))
   .volatile(() => ({
-    pid: "",
+    pid: '',
     selected: false,
     // highlighted: types.optional(types.boolean, false),
   }))
@@ -229,18 +255,24 @@ const Result = types
     updateAppearenceFromState() {},
 
     serialize(options) {
-      const { from_name, to_name, type, score, value } = getSnapshot(self);
+      const { type, score, value, ...sn } = getSnapshot(self);
       const { valueType } = self.from_name;
       const data = self.area ? self.area.serialize(options) : {};
+      // cut off annotation id
+      const id = self.area?.cleanId;
+      const from_name = Tree.cleanUpId(sn.from_name);
+      const to_name = Tree.cleanUpId(sn.to_name);
 
       if (!data) return null;
       if (!self.isSubmitable) return null;
-      // with `mergeLabelsAndResults` control uses only one result even with external `Labels`
-      if (type === "labels" && self.to_name.mergeLabelsAndResults) return null;
-      // cut off annotation id
-      const id = self.area.cleanId;
 
       if (!isDefined(data.value)) data.value = {};
+      // with `mergeLabelsAndResults` control uses only one result even with external `Labels`
+      if (self.to_name.mergeLabelsAndResults) {
+        if (type === 'labels') return null;
+        // add labels to the main region, not nested ones
+        if (self.area?.labels?.length && !self.from_name.perregion) data.value.labels = self.area.labels;
+      }
 
       const contolMeta = self.from_name.metaValue;
 
@@ -254,7 +286,7 @@ const Result = types
       }
 
       if (self.area.parentID) {
-        data.parentID = self.area.parentID.replace(/#.*/, "");
+        data.parentID = self.area.parentID.replace(/#.*/, '');
       }
 
       Object.assign(data, { id, from_name, to_name, type, origin: self.area.origin });
@@ -263,7 +295,9 @@ const Result = types
         Object.assign(data.value, { [valueType]: value[valueType] });
       }
 
-      if (typeof score === "number") data.score = score;
+      if (typeof score === 'number') data.score = score;
+
+      if (!self.editable) data.readonly = true;
 
       return data;
     },
@@ -277,10 +311,10 @@ const Result = types
           to_name: parent.name,
           source: parent.value,
           type: control.type,
-          parent_id: self.parentID === "" ? null : self.parentID,
+          parent_id: self.parentID === '' ? null : self.parentID,
         };
 
-        if (self.normalization) tree["normalization"] = self.normalization;
+        if (self.normalization) tree['normalization'] = self.normalization;
 
         return tree;
       };
@@ -325,7 +359,7 @@ const Result = types
 
       self.annotation.relationStore.deleteNodeRelation(self);
 
-      if (self.type === "polygonregion") {
+      if (self.type === 'polygonregion') {
         self.destroyRegion();
       }
 

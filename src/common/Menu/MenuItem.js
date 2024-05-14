@@ -1,6 +1,7 @@
-import React from "react";
-import { cn } from "../../utils/bem";
-import { MenuContext } from "./MenuContext";
+import React from 'react';
+import { useMemo } from 'react';
+import { cn } from '../../utils/bem';
+import { MenuContext } from './MenuContext';
 
 export const MenuItem = ({
   name,
@@ -17,10 +18,10 @@ export const MenuItem = ({
   onClick,
   ...rest
 }) => {
-  const { selected } = React.useContext(MenuContext);
-  const rootClass = cn("menu", { elem: "item" });
+  const { selected, allowClickSelected } = React.useContext(MenuContext);
+  const rootClass = cn('menu', { elem: 'item' });
   const isActive = (() => {
-    const pathname = window.location.pathname.replace(/\/$/, "");
+    const pathname = window.location.pathname.replace(/\/$/, '');
     const url = to ?? href;
 
     if (selected.has(name)) {
@@ -32,18 +33,19 @@ export const MenuItem = ({
     }
   })();
 
-  const linkContent = (
+  const linkContent = useMemo(() => (
     <>
-      {icon && <span className={rootClass.elem("item-icon")}>{icon}</span>}
+      {icon && <span className={rootClass.elem('item-icon')}>{icon}</span>}
       {children ?? label}
     </>
-  );
+  ), [children, label, icon]);
 
   const linkAttributes = {
     className: rootClass
       .mod({
         active: isActive || active,
-        look: danger && "danger",
+        look: danger && 'danger',
+        clickable: allowClickSelected,
       })
       .mix(className),
     onClick,
@@ -57,7 +59,7 @@ export const MenuItem = ({
   return (
     <li>
       {href ? (
-        <a href={href ?? "#"} {...linkAttributes}>
+        <a href={href ?? '#'} {...linkAttributes}>
           {linkContent}
         </a>
       ) : (

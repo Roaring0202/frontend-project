@@ -1,26 +1,30 @@
-import Keymaster from "keymaster";
-import React, { CSSProperties, DOMAttributes, FC, forwardRef, ForwardRefExoticComponent, useEffect, useRef, useState } from "react";
-import { Hotkey } from "../../core/Hotkey";
-import { useHotkey } from "../../hooks/useHotkey";
-import { Block, CNTagName, Elem } from "../../utils/bem";
-import { isDefined } from "../../utils/utilities";
-import "./Button.styl";
+import Keymaster from 'keymaster';
+import { ButtonHTMLAttributes, cloneElement, CSSProperties, FC, forwardRef, ForwardRefExoticComponent, useMemo } from 'react';
+import { Hotkey } from '../../core/Hotkey';
+import { useHotkey } from '../../hooks/useHotkey';
+import { Block, CNTagName, Elem } from '../../utils/bem';
+import { isDefined } from '../../utils/utilities';
+import { Tooltip } from '../Tooltip/Tooltip';
+import './Button.styl';
 
-const hotkeys = Hotkey();
+type HTMLButtonProps = Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'type'>
 
-export interface ButtonProps extends DOMAttributes<HTMLButtonElement> {
-  type?: "text" | "link";
+export interface ButtonProps extends HTMLButtonProps {
+  type?: 'text' | 'link';
   href?: string;
   extra?: JSX.Element;
   className?: string;
-  size?: 'small' | 'medium' | "compact" | 'large';
+  size?: 'small' | 'medium' | 'compact' | 'large';
   waiting?: boolean;
   icon?: JSX.Element;
   tag?: CNTagName;
-  look?: "primary" | "danger" | "destructive";
+  look?: 'primary' | 'danger' | 'destructive' | 'alt' | 'outlined' | 'active';
   primary?: boolean;
+  danger?: boolean;
   style?: CSSProperties;
   hotkey?: keyof typeof Hotkey.keymap;
+  tooltip?: string;
+  nopadding?: boolean;
 }
 
 export interface ButtonGroupProps {
@@ -43,15 +47,20 @@ export const Button: ButtonType<ButtonProps> = forwardRef(({
   tag,
   look,
   primary,
+  danger,
   hotkey,
+  tooltip,
+  nopadding,
   ...rest
 }, ref) => {
-  const finalTag = tag ?? (rest.href ? "a" : "button");
+  const finalTag = tag ?? (rest.href ? 'a' : 'button');
 
   const mods = {
     size,
     waiting,
     type,
+    danger,
+    nopadding,
     look: look ?? [],
     withIcon: !!icon,
     withExtra: !!extra,
@@ -61,15 +70,15 @@ export const Button: ButtonType<ButtonProps> = forwardRef(({
     mods.look = 'primary';
   }
 
-  const iconElem = React.useMemo(() => {
+  const iconElem = useMemo(() => {
     if (!icon) return null;
     if (isDefined(icon.props.size)) return icon;
 
     switch (size) {
-      case "small":
-        return React.cloneElement(icon, { ...icon.props, size: 12, width: 12, height: 12 });
-      case "compact":
-        return React.cloneElement(icon, { ...icon.props, size: 14, width: 14, height: 14 });
+      case 'small':
+        return cloneElement(icon, { ...icon.props, size: 12, width: 12, height: 12 });
+      case 'compact':
+        return cloneElement(icon, { ...icon.props, size: 14, width: 14, height: 14 });
       default:
         return icon;
     }
@@ -101,16 +110,24 @@ export const Button: ButtonType<ButtonProps> = forwardRef(({
 
   if (hotkey && isDefined(Hotkey.keymap[hotkey])) {
     return (
-      <Hotkey.Tooltip name={hotkey}>
+      <Hotkey.Tooltip name={hotkey} title={tooltip}>
         {buttonBody}
       </Hotkey.Tooltip>
+    );
+  }
+
+  if (tooltip) {
+    return (
+      <Tooltip title={tooltip} theme="light">
+        {buttonBody}
+      </Tooltip>
     );
   }
 
   return buttonBody;
 });
 
-Button.displayName = "Button";
+Button.displayName = 'Button';
 
 
 const Group: FC<ButtonGroupProps> = ({ className, children, collapsed }) => {

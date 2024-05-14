@@ -1,6 +1,6 @@
-import { getEnv, getParent, getRoot, getType, types } from "mobx-state-tree";
-import { guidGenerator } from "../core/Helpers";
-import { AnnotationMixin } from "./AnnotationMixin";
+import { getEnv, getParent, getRoot, getType, types } from 'mobx-state-tree';
+import { guidGenerator } from '../core/Helpers';
+import { AnnotationMixin } from './AnnotationMixin';
 
 const RegionsMixin = types
   .model({
@@ -12,12 +12,14 @@ const RegionsMixin = types
 
     hidden: types.optional(types.boolean, false),
 
-    parentID: types.optional(types.string, ""),
+    parentID: types.optional(types.string, ''),
 
     fromSuggestion: false,
 
     // Dynamic preannotations enabled
     dynamic: false,
+
+    locked: false,
 
     origin: types.optional(types.enumeration([
       'prediction',
@@ -49,6 +51,8 @@ const RegionsMixin = types
     },
 
     get editable() {
+      if (self.locked === true) return false;
+
       return self.readonly === false && self.annotation.editable === true;
     },
 
@@ -62,6 +66,10 @@ const RegionsMixin = types
 
     get inSelection() {
       return self.annotation?.regionStore.isSelected(self);
+    },
+
+    get isReady() {
+      return true;
     },
 
     getConnectedDynamicRegions(selfExcluding) {
@@ -90,6 +98,18 @@ const RegionsMixin = types
 
       beforeDestroy() {
         self.notifyDrawingFinished({ destroy: true });
+      },
+
+      setLocked(locked) {
+        if (locked instanceof Function) {
+          self.locked = locked(self.locked);
+        } else {
+          self.locked = locked;
+        }
+      },
+
+      makeDynamic() {
+        self.dynamic = true;
       },
 
       // All of the below accept size as an argument
@@ -156,7 +176,7 @@ const RegionsMixin = types
       updateAppearenceFromState() {},
 
       serialize() {
-        console.error("Region class needs to implement serialize");
+        console.error('Region class needs to implement serialize');
       },
 
       toStateJSON() {
@@ -168,10 +188,10 @@ const RegionsMixin = types
             to_name: parent.name,
             source: parent.value,
             type: control.type,
-            parent_id: self.parentID === "" ? null : self.parentID,
+            parent_id: self.parentID === '' ? null : self.parentID,
           };
 
-          if (self.normalization) tree["normalization"] = self.normalization;
+          if (self.normalization) tree['normalization'] = self.normalization;
 
           return tree;
         };
@@ -214,7 +234,7 @@ const RegionsMixin = types
      * @param {boolean} tryToKeepStates try to keep states selected if such settings enabled
      */
       unselectRegion(tryToKeepStates = false) {
-        console.log("UNSELECT REGION", "you should not be here");
+        console.log('UNSELECT REGION', 'you should not be here');
         // eslint-disable-next-line no-constant-condition
         if (1) return;
         const annotation = self.annotation;
@@ -243,9 +263,9 @@ const RegionsMixin = types
       onClickRegion(ev) {
         const annotation = self.annotation;
 
-        if (!annotation.editable || self.isDrawing) return;
+        if (self.editable && (self.isDrawing || annotation.isDrawing)) return;
 
-        if (annotation.relationMode) {
+        if (self.editable && annotation.relationMode) {
           annotation.addRelation(self);
           annotation.stopRelationMode();
           annotation.regionStore.unselectAll();
@@ -260,8 +280,8 @@ const RegionsMixin = types
 
         if (additiveMode) {
           annotation.toggleRegionSelection(self);
-        } else {const wasNotSelected = !self.selected;
-
+        } else {
+          const wasNotSelected = !self.selected;
 
           if (wasNotSelected) {
             annotation.selectArea(self);
@@ -307,7 +327,7 @@ const RegionsMixin = types
           const env = getEnv(self);
 
           self.drawingTimeout = setTimeout(() => {
-            env.events.invoke("regionFinishedDrawing", self, self.getConnectedDynamicRegions(destroy));
+            env.events.invoke('regionFinishedDrawing', self, self.getConnectedDynamicRegions(destroy));
           }, timeout);
         }
       },

@@ -1,25 +1,26 @@
-import { inject, observer } from "mobx-react";
-import { getType, types } from "mobx-state-tree";
-import ColorScheme from "pleasejs";
-import React from "react";
+import { inject, observer } from 'mobx-react';
+import { getType, types } from 'mobx-state-tree';
+import ColorScheme from 'pleasejs';
+import React from 'react';
 
-import { Tooltip } from "../../common/Tooltip/Tooltip";
-import InfoModal from "../../components/Infomodal/Infomodal";
-import { Label } from "../../components/Label/Label";
-import Constants from "../../core/Constants";
-import { customTypes } from "../../core/CustomTypes";
-import { guidGenerator } from "../../core/Helpers";
-import Registry from "../../core/Registry";
-import Types from "../../core/Types";
-import { AnnotationMixin } from "../../mixins/AnnotationMixin";
-import ProcessAttrsMixin from "../../mixins/ProcessAttrs";
-import { TagParentMixin } from "../../mixins/TagParentMixin";
-import ToolsManager from "../../tools/Manager";
-import Utils from "../../utils";
-import { parseValue } from "../../utils/data";
+import { Tooltip } from '../../common/Tooltip/Tooltip';
+import InfoModal from '../../components/Infomodal/Infomodal';
+import { Label } from '../../components/Label/Label';
+import Constants from '../../core/Constants';
+import { customTypes } from '../../core/CustomTypes';
+import { guidGenerator } from '../../core/Helpers';
+import Registry from '../../core/Registry';
+import Types from '../../core/Types';
+import { AnnotationMixin } from '../../mixins/AnnotationMixin';
+import ProcessAttrsMixin from '../../mixins/ProcessAttrs';
+import { TagParentMixin } from '../../mixins/TagParentMixin';
+import ToolsManager from '../../tools/Manager';
+import Utils from '../../utils';
+import { parseValue } from '../../utils/data';
+import { FF_DEV_2128, isFF } from '../../utils/feature-flags';
 
 /**
- * Label tag represents a single label. Use with the Labels tag, including BrushLabels, EllipseLabels, HyperTextLabels, KeyPointLabels, and other Labels tags to specify the value of a specific label.
+ * The `Label` tag represents a single label. Use with the `Labels` tag, including `BrushLabels`, `EllipseLabels`, `HyperTextLabels`, `KeyPointLabels`, and other `Labels` tags to specify the value of a specific label.
  *
  * @example
  * <!--Basic named entity recognition labeling configuration for text-->
@@ -45,6 +46,7 @@ import { parseValue } from "../../utils/data";
  * @param {string} [background=#36B37E]     - Background color of an active label in hexadecimal
  * @param {string} [selectedColor=#ffffff]  - Color of text in an active label in hexadecimal
  * @param {symbol|word} [granularity]       - Set control based on symbol or word selection (only for Text)
+ * @param {string} [html]                   - HTML code is used to display label button instead of raw text provided by `value` (should be properly escaped)
  */
 const TagAttrs = types.model({
   value: types.maybeNull(types.string),
@@ -54,30 +56,31 @@ const TagAttrs = types.model({
   hint: types.maybeNull(types.string),
   hotkey: types.maybeNull(types.string),
   showalias: types.optional(types.boolean, false),
-  aliasstyle: types.optional(types.string, "opacity: 0.6"),
-  size: types.optional(types.string, "medium"),
+  aliasstyle: types.optional(types.string, 'opacity: 0.6'),
+  size: types.optional(types.string, 'medium'),
   background: types.optional(customTypes.color, Constants.LABEL_BACKGROUND),
-  selectedcolor: types.optional(customTypes.color, "#ffffff"),
-  granularity: types.maybeNull(types.enumeration(["symbol", "word", "sentence", "paragraph"])),
+  selectedcolor: types.optional(customTypes.color, '#ffffff'),
+  granularity: types.maybeNull(types.enumeration(['symbol', 'word', 'sentence', 'paragraph'])),
   groupcancontain: types.maybeNull(types.string),
   // childrencheck: types.optional(types.enumeration(["any", "all"]), "any")
+  ...(isFF(FF_DEV_2128) ? { html: types.maybeNull(types.string) } : {} ),
 });
 
 const Model = types.model({
   id: types.optional(types.identifier, guidGenerator),
-  type: "label",
+  type: 'label',
   visible: types.optional(types.boolean, true),
-  _value: types.optional(types.string, ""),
+  _value: types.optional(types.string, ''),
   parentTypes: Types.tagsTypes([
-    "Labels",
-    "EllipseLabels",
-    "RectangleLabels",
-    "PolygonLabels",
-    "KeyPointLabels",
-    "BrushLabels",
-    "HyperTextLabels",
-    "TimeSeriesLabels",
-    "ParagraphLabels",
+    'Labels',
+    'EllipseLabels',
+    'RectangleLabels',
+    'PolygonLabels',
+    'KeyPointLabels',
+    'BrushLabels',
+    'HyperTextLabels',
+    'TimeSeriesLabels',
+    'ParagraphLabels',
   ]),
 }).volatile(self => {
   return {
@@ -109,16 +112,30 @@ const Model = types.model({
    * Select label
    */
   toggleSelected() {
+    let sameObjectSelectedRegions = [];
+
     // here we check if you click on label from labels group
     // connected to the region on the same object tag that is
     // right now highlighted, and if that region is readonly
-    const sameObjectSelectedRegions = self.annotation.selectedRegions.filter(region => {
-      return region.parent?.name === self.parent?.toname;
-    });
+
+    if(self.annotation.selectedDrawingRegions.length > 0){
+      /*  here we are validating if we are drawing a new region or if region is already closed
+          the way that new drawing region and a finished regions work is similar, but new drawing region
+          doesn't visualy select the polygons when you are drawing.
+       */
+      sameObjectSelectedRegions = self.annotation.selectedDrawingRegions.filter(region => {
+        return region.parent?.name === self.parent?.toname;
+      });
+    } else if(self.annotation.selectedRegions.length > 0) {
+      sameObjectSelectedRegions = self.annotation.selectedRegions.filter(region => {
+        return region.parent?.name === self.parent?.toname;
+      });
+    }
+
+
     const affectedRegions = sameObjectSelectedRegions.filter(region => {
       return region.editable;
     });
-
 
     // one more check if that label can be selected
     if (!self.annotation.editable) return;
@@ -135,16 +152,16 @@ const Model = types.model({
 
     // check if there is a region selected and if it is and user
     // is changing the label we need to make sure that region is
-    // not going to endup without results at all
+    // not going to end up without labels at all
     const applicableRegions =  affectedRegions.filter(region => {
       if (
         labels.selectedLabels.length === 1 &&
         self.selected &&
-        region.results.length === 1 &&
+        region.labelings.length === 1 &&
         (!self.parent?.allowempty || self.isEmpty)
       )
         return false;
-      if (self.parent?.type !== "labels" && !self.parent?.type.includes(region.results[0].type)) return false;
+      if (self.parent?.type !== 'labels' && !self.parent?.type.includes(region.results[0].type)) return false;
       return true;
     });
 
@@ -153,9 +170,9 @@ const Model = types.model({
     // if we are going to select label and it would be the first in this labels group
     if (!labels.selectedLabels.length && !self.selected) {
       // unselect labels from other groups of labels connected to this obj
+
       self.annotation.toNames.get(labels.toname).
-        filter(tag => tag.type && tag.type.endsWith("labels") && tag.name !== labels.name).
-        forEach(tag => tag.unselectAll && tag.unselectAll());
+        filter(tag => tag.type && tag.type.endsWith('labels') && tag.name !== labels.name);
 
       // unselect other tools if they exist and selected
       const manager = ToolsManager.getInstance({ name: self.parent.toname });
@@ -233,6 +250,15 @@ const Model = types.model({
   },
 
   onHotKey() {
+    return self.onLabelInteract();
+  },
+
+  onClick() {
+    self.onLabelInteract();
+    return false;
+  },
+
+  onLabelInteract() {
     return self.toggleSelected();
   },
 
@@ -249,18 +275,23 @@ const Model = types.model({
   },
 }));
 
-const LabelModel = types.compose("LabelModel", TagParentMixin, TagAttrs, ProcessAttrsMixin, Model, AnnotationMixin);
+const LabelModel = types.compose('LabelModel', TagParentMixin, TagAttrs, ProcessAttrsMixin, Model, AnnotationMixin);
 
-const HtxLabelView = inject("store")(
+const HtxLabelView = inject('store')(
   observer(({ item, store }) => {
     const hotkey = (store.settings.enableTooltips || store.settings.enableLabelTooltips) && store.settings.enableHotkeys && item.hotkey;
 
     const label = (
-      <Label color={item.background} margins empty={item.isEmpty} hotkey={hotkey} hidden={!item.visible} selected={item.selected} onClick={() => {
-        item.toggleSelected();
-        return false;
-      }}>
-        {item._value}
+      <Label
+        color={item.background}
+        margins
+        empty={item.isEmpty}
+        hotkey={hotkey}
+        hidden={!item.visible}
+        selected={item.selected}
+        onClick={item.onClick}
+      >
+        {item.html ? <div title={item._value} dangerouslySetInnerHTML={{ __html: item.html }}/> :  item._value }
         {item.showalias === true && item.alias && (
           <span style={Utils.styleToProp(item.aliasstyle)}>&nbsp;{item.alias}</span>
         )}
@@ -273,6 +304,6 @@ const HtxLabelView = inject("store")(
   }),
 );
 
-Registry.addTag("label", LabelModel, HtxLabelView);
+Registry.addTag('label', LabelModel, HtxLabelView);
 
 export { HtxLabelView, LabelModel };

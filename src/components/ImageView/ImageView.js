@@ -1,28 +1,30 @@
-import React, { Component, createRef, forwardRef, Fragment, memo, useState } from "react";
-import { Group, Layer, Line, Rect, Stage } from "react-konva";
-import { observer } from "mobx-react";
-import { getRoot, isAlive } from "mobx-state-tree";
+import React, { Component, createRef, forwardRef, Fragment, memo, useEffect, useRef, useState } from 'react';
+import { Group, Layer, Line, Rect, Stage } from 'react-konva';
+import { observer } from 'mobx-react';
+import { getEnv, getRoot, isAlive } from 'mobx-state-tree';
 
-import ImageGrid from "../ImageGrid/ImageGrid";
-import ImageTransformer from "../ImageTransformer/ImageTransformer";
-import ObjectTag from "../../components/Tags/Object";
-import Tree from "../../core/Tree";
-import styles from "./ImageView.module.scss";
-import { errorBuilder } from "../../core/DataValidator/ConfigValidator";
-import messages from "../../utils/messages";
-import { chunks, findClosestParent } from "../../utils/utilities";
-import Konva from "konva";
-import { observe } from "mobx";
-import { LoadingOutlined } from "@ant-design/icons";
-import { Toolbar } from "../Toolbar/Toolbar";
-import { ImageViewProvider } from "./ImageViewContext";
-import { Hotkey } from "../../core/Hotkey";
-import { useObserver } from "mobx-react-lite";
-import ResizeObserver from "../../utils/resize-observer";
+import ImageGrid from '../ImageGrid/ImageGrid';
+import ImageTransformer from '../ImageTransformer/ImageTransformer';
+import ObjectTag from '../../components/Tags/Object';
+import Tree from '../../core/Tree';
+import styles from './ImageView.module.scss';
+import { errorBuilder } from '../../core/DataValidator/ConfigValidator';
+import { chunks, findClosestParent } from '../../utils/utilities';
+import Konva from 'konva';
+import { LoadingOutlined } from '@ant-design/icons';
+import { Toolbar } from '../Toolbar/Toolbar';
+import { ImageViewProvider } from './ImageViewContext';
+import { Hotkey } from '../../core/Hotkey';
+import { useObserver } from 'mobx-react';
+import ResizeObserver from '../../utils/resize-observer';
+import { debounce } from '../../utils/debounce';
+import Constants from '../../core/Constants';
+import { fixRectToFit } from '../../utils/image';
+import { FF_DEV_1285, FF_DEV_1442, FF_DEV_3077, FF_DEV_4081, isFF } from '../../utils/feature-flags';
 
 Konva.showWarnings = false;
 
-const hotkeys = Hotkey("Image");
+const hotkeys = Hotkey('Image');
 
 const splitRegions = (regions) => {
   const brushRegions = [];
@@ -30,10 +32,10 @@ const splitRegions = (regions) => {
   const l = regions.length;
   let i = 0;
 
-  for(i; i < l; i++) {
+  for (i; i < l; i++) {
     const region = regions[i];
 
-    if (region.type === "brushregion") {
+    if (region.type === 'brushregion') {
       brushRegions.push(region);
     } else {
       shapeRegions.push(region);
@@ -47,12 +49,12 @@ const splitRegions = (regions) => {
 };
 
 const Region = memo(({ region, showSelected = false }) => {
-  return useObserver(()=>(region.inSelection !== showSelected ? null : Tree.renderItem(region, false)));
+  return useObserver(() => region.inSelection !== showSelected ? null : Tree.renderItem(region, region.annotation, false));
 });
 
 const RegionsLayer = memo(({ regions, name, useLayers, showSelected = false }) => {
   const content = regions.map((el) => (
-    <Region key={`region-${el.id}`} region={el} showSelected={showSelected}/>
+    <Region key={`region-${el.id}`} region={el} showSelected={showSelected} />
   ));
 
   return useLayers === false ? (
@@ -64,7 +66,7 @@ const RegionsLayer = memo(({ regions, name, useLayers, showSelected = false }) =
   );
 });
 
-const Regions = memo(({ regions, useLayers = true, chunkSize  = 15, suggestion = false, showSelected = false }) => {
+const Regions = memo(({ regions, useLayers = true, chunkSize = 15, suggestion = false, showSelected = false }) => {
   return (
     <ImageViewProvider value={{ suggestion }}>
       {(chunkSize ? chunks(regions, chunkSize) : regions).map((chunk, i) => (
@@ -82,23 +84,28 @@ const Regions = memo(({ regions, useLayers = true, chunkSize  = 15, suggestion =
 
 const DrawingRegion = observer(({ item }) => {
   const { drawingRegion } = item;
-  const Wrapper = drawingRegion && drawingRegion.type === "brushregion" ? Fragment: Layer;
+  const Wrapper = drawingRegion && drawingRegion.type === 'brushregion' ? Fragment : Layer;
 
   return (
     <Wrapper>
-      {drawingRegion?<Region key={`drawing`} region={drawingRegion}/>:drawingRegion}
+      {drawingRegion ? <Region key={'drawing'} region={drawingRegion} /> : drawingRegion}
     </Wrapper>
   );
 });
 
-const SELECTION_COLOR = "#40A9FF";
-const SELECTION_SECOND_COLOR = "white";
-const SELECTION_DASH = [3,3];
+const SELECTION_COLOR = '#40A9FF';
+const SELECTION_SECOND_COLOR = 'white';
+const SELECTION_DASH = [3, 3];
 
-const SelectionBorders = observer(({ item }) => {
-  const { selectionBorders: bbox } = item;
+const SelectionBorders = observer(({ item, selectionArea }) => {
+  const { selectionBorders: bbox } = selectionArea;
 
-  const points = bbox? [
+  bbox.left = bbox.left * item.stageScale;
+  bbox.right = bbox.right * item.stageScale;
+  bbox.top = bbox.top * item.stageScale ;
+  bbox.bottom = bbox.bottom * item.stageScale ;
+
+  const points = bbox ? [
     {
       x: bbox.left,
       y: bbox.top,
@@ -135,8 +142,8 @@ const SelectionBorders = observer(({ item }) => {
         return (
           <Rect
             key={idx}
-            x={point.x-3}
-            y={point.y-3}
+            x={point.x - 3}
+            y={point.y - 3}
             width={6}
             height={6}
             fill={SELECTION_COLOR}
@@ -179,14 +186,79 @@ const SelectionRect = observer(({ item }) => {
   );
 });
 
-const TRANSFORMER_BACK_NAME = "transformer_back";
-const SelectedRegions = observer(({ selectedRegions }) => {
+const TRANSFORMER_BACK_ID = 'transformer_back';
+
+const TransformerBack = observer(({ item }) => {
+  const { selectedRegionsBBox } = item;
+  const singleNodeMode = item.selectedRegions.length === 1;
+  const dragStartPointRef = useRef({ x: 0, y: 0 });
+
+  return (
+    <Layer>
+      {selectedRegionsBBox && !singleNodeMode && (
+        <Rect
+          id={TRANSFORMER_BACK_ID}
+          fill="rgba(0,0,0,0)"
+          draggable
+          onClick={()=>{
+            item.annotation.unselectAreas();
+          }}
+          onMouseOver={(ev) => {
+            if (!item.annotation.relationMode) {
+              ev.target.getStage().container().style.cursor = Constants.POINTER_CURSOR;
+            }
+          }}
+          onMouseOut={(ev) => {
+            ev.target.getStage().container().style.cursor = Constants.DEFAULT_CURSOR;
+          }}
+          onDragStart={e=>{
+            dragStartPointRef.current = {
+              x: e.target.getAttr('x'),
+              y: e.target.getAttr('y'),
+            };
+          }}
+          dragBoundFunc={(pos) => {
+            let { x, y } = pos;
+            const { top, left, right, bottom } =  item.selectedRegionsBBox;
+            const { stageHeight, stageWidth } = item;
+
+            const offset = {
+              x: dragStartPointRef.current.x-left,
+              y: dragStartPointRef.current.y-top,
+            };
+
+            x -=offset.x;
+            y -=offset.y;
+
+            const bbox = { x, y, width: right - left, height: bottom  - top };
+
+            const fixed = fixRectToFit(bbox, stageWidth, stageHeight);
+
+            if (fixed.width !== bbox.width) {
+              x += (fixed.width - bbox.width) * (fixed.x !== bbox.x ? -1 : 1);
+            }
+
+            if (fixed.height !== bbox.height) {
+              y += (fixed.height - bbox.height) * (fixed.y !== bbox.y ? -1 : 1);
+            }
+
+            x +=offset.x;
+            y +=offset.y;
+            return { x, y };
+          }}
+        />
+      )}
+    </Layer>
+  );
+});
+
+const SelectedRegions = observer(({ item, selectedRegions }) => {
   if (!selectedRegions) return null;
   const { brushRegions = [], shapeRegions = [] } = splitRegions(selectedRegions);
 
   return (
     <>
-      <Layer id={TRANSFORMER_BACK_NAME} />
+      <TransformerBack item={item}/>
       {brushRegions.length > 0 && (
         <Regions
           key="brushes"
@@ -212,7 +284,31 @@ const SelectedRegions = observer(({ selectedRegions }) => {
 });
 
 const SelectionLayer = observer(({ item, selectionArea }) => {
-  const scale = 1 / (item.zoomScale ||1);
+
+  const scale = 1 / (item.zoomScale || 1);
+
+  const [isMouseWheelClick, setIsMouseWheelClick] = useState(false);
+  const [shift, setShift] = useState(false);
+  const isPanTool = item.getToolsManager().findSelectedTool()?.fullName === 'ZoomPanTool';
+
+  const dragHandler = (e) => setIsMouseWheelClick(e.buttons === 4);
+
+  const handleKey = (e) => setShift(e.shiftKey);
+
+  useEffect(()=>{
+    window.addEventListener('keydown', handleKey);
+    window.addEventListener('keyup', handleKey);
+    window.addEventListener('mousedown', dragHandler);
+    window.addEventListener('mouseup', dragHandler);
+    return () => {
+      window.removeEventListener('keydown', handleKey);
+      window.removeEventListener('keyup', handleKey);
+      window.removeEventListener('mousedown', dragHandler);
+      window.removeEventListener('mouseup', dragHandler);
+    };
+  },[]);
+
+  const disableTransform = item.zoomScale > 1 && (shift || isPanTool || isMouseWheelClick);
 
   let supportsTransform = true;
   let supportsRotate = true;
@@ -224,35 +320,38 @@ const SelectionLayer = observer(({ item, selectionArea }) => {
     supportsScale = supportsScale && true;
   });
 
-  supportsTransform = supportsTransform && (item.selectedRegions.length>1 || (item.useTransformer || item.selectedShape?.preferTransformer) && item.selectedShape?.useTransformer);
+  supportsTransform =
+    supportsTransform &&
+    (item.selectedRegions.length > 1 ||
+      ((item.useTransformer || item.selectedShape?.preferTransformer) && item.selectedShape?.useTransformer));
 
   return (
     <Layer scaleX={scale} scaleY={scale}>
-      { selectionArea.isActive ? (
-        <SelectionRect item={selectionArea}/>
-      ) : (!supportsTransform && item.selectedRegions.length>1 ? (
-        <SelectionBorders item={selectionArea} />
-      ) : null)}
-
+      {selectionArea.isActive ? (
+        <SelectionRect item={selectionArea} />
+      ) : !supportsTransform && item.selectedRegions.length > 1 ? (
+        <SelectionBorders item={item} selectionArea={selectionArea} />
+      ) : null}
       <ImageTransformer
         item={item}
         rotateEnabled={supportsRotate}
-        supportsTransform={supportsTransform}
+        supportsTransform={!disableTransform && supportsTransform}
         supportsScale={supportsScale}
         selectedShapes={item.selectedRegions}
         singleNodeMode={item.selectedRegions.length === 1}
         useSingleNodeRotation={item.selectedRegions.length === 1 && supportsRotate}
-        draggableBackgroundAt={`#${TRANSFORMER_BACK_NAME}`}
+        draggableBackgroundSelector={`#${TRANSFORMER_BACK_ID}`}
       />
     </Layer>
   );
 });
 
 const Selection = observer(({ item, selectionArea }) => {
+
   return (
     <>
-      <SelectedRegions key="selected-regions" selectedRegions={item.selectedRegions} />
-      <SelectionLayer item={item} selectionArea={selectionArea} />
+      <SelectedRegions key="selected-regions" item={item} selectedRegions={item.selectedRegions} />
+      <SelectionLayer item={item} selectionArea={selectionArea}/>
     </>
   );
 });
@@ -265,7 +364,12 @@ const Crosshair = memo(forwardRef(({ width, height }, ref) => {
 
   const [visible, setVisible] = useState(false);
   const strokeWidth = 1;
-  const dashStyle = [3,3];
+  const dashStyle = [3, 3];
+  let enableStrokeScale = true;
+
+  if (isFF(FF_DEV_1285)) {
+    enableStrokeScale = false;
+  }
 
   if (ref) {
     ref.current = {
@@ -298,7 +402,7 @@ const Crosshair = memo(forwardRef(({ width, height }, ref) => {
           points={pointsH}
           stroke="#fff"
           strokeWidth={strokeWidth}
-          strokeScaleEnabled={false}
+
         />
         <Line
           name="v-black"
@@ -306,7 +410,7 @@ const Crosshair = memo(forwardRef(({ width, height }, ref) => {
           stroke="#000"
           strokeWidth={strokeWidth}
           dash={dashStyle}
-          strokeScaleEnabled={false}
+
         />
       </Group>
       <Group>
@@ -314,8 +418,7 @@ const Crosshair = memo(forwardRef(({ width, height }, ref) => {
           name="h-white"
           points={pointsV}
           stroke="#fff"
-          strokeWidth={strokeWidth}
-          strokeScaleEnabled={false}
+
         />
         <Line
           name="h-black"
@@ -323,8 +426,7 @@ const Crosshair = memo(forwardRef(({ width, height }, ref) => {
           stroke="#000"
           strokeWidth={strokeWidth}
           dash={dashStyle}
-          strokeScaleEnabled={false}
-        />
+
       </Group>
     </Layer>
   );
@@ -336,52 +438,128 @@ export default observer(
     canvasX;
     canvasY;
     lastOffsetWidth = -1;
-    propsObserverDispose = [];
+    lastOffsetHeight = -1;
     state = {
       imgStyle: {},
-      ratio: 1,
       pointer: [0, 0],
-    }
+    };
 
     imageRef = createRef();
     crosshairRef = createRef();
+    handleDeferredMouseDown = null;
+    deferredClickTimeout = [];
+    skipMouseUp = false;
+
+    constructor(props) {
+      super(props);
+
+      if (typeof props.item.smoothing === 'boolean')
+        props.store.settings.setSmoothing(props.item.smoothing);
+    }
 
     handleOnClick = e => {
       const { item } = this.props;
+
+      if (isFF(FF_DEV_1442)) {
+        this.handleDeferredMouseDown?.();
+      }
+      if (this.skipMouseUp) {
+        this.skipMouseUp = false;
+        return;
+      }
+
       const evt = e.evt || e;
 
-      return item.event("click", evt, evt.offsetX, evt.offsetY);
+      return item.event('click', evt, evt.offsetX, evt.offsetY);
+    };
+
+    resetDeferredClickTimeout = () => {
+      if (this.deferredClickTimeout.length > 0) {
+        this.deferredClickTimeout = this.deferredClickTimeout.filter((timeout) => {
+          clearTimeout(timeout);
+          return false;
+        });
+      }
+    };
+
+    handleDeferredClick = (handleDeferredMouseDownCallback, handleDeselection, eligibleToDeselect = false) => {
+      this.handleDeferredMouseDown = () => {
+        if (eligibleToDeselect) {
+          handleDeselection();
+        }
+        handleDeferredMouseDownCallback();
+      };
+      this.resetDeferredClickTimeout();
+      this.deferredClickTimeout.push(setTimeout(() => {
+        this.handleDeferredMouseDown?.();
+      }, this.props.item.annotation.isDrawing ? 0 : 100));
     };
 
     handleMouseDown = e => {
       const { item } = this.props;
+      const isPanTool = item.getToolsManager().findSelectedTool()?.fullName === 'ZoomPanTool';
 
       item.updateSkipInteractions(e);
 
-      // item.freezeHistory();
       const p = e.target.getParent();
 
-      if (p && p.className === "Transformer") return;
+      if (!item.annotation.editable && !isPanTool) return;
+      if (p && p.className === 'Transformer') return;
 
-      if (
+      const handleMouseDown = () => {
+        if (
         // create regions over another regions with Cmd/Ctrl pressed
-        item.getSkipInteractions() ||
-        e.target === e.target.getStage() ||
-        findClosestParent(
-          e.target,
-          el => el.nodeType === "Group" && ["ruler", "segmentation"].indexOf(el?.attrs?.name) > -1,
-        )
-      ) {
-        window.addEventListener("mousemove", this.handleGlobalMouseMove);
-        window.addEventListener("mouseup", this.handleGlobalMouseUp);
-        const { offsetX: x, offsetY: y } = e.evt;
-        // store the canvas coords for calculations in further events
-        const { left, top } = this.container.getBoundingClientRect();
+          item.getSkipInteractions() ||
+          e.target === item.stageRef ||
+          findClosestParent(
+            e.target,
+            el => el.nodeType === 'Group' && ['ruler', 'segmentation'].indexOf(el?.attrs?.name) > -1,
+          )
+        ) {
+          window.addEventListener('mousemove', this.handleGlobalMouseMove);
+          window.addEventListener('mouseup', this.handleGlobalMouseUp);
+          const { offsetX: x, offsetY: y } = e.evt;
+          // store the canvas coords for calculations in further events
+          const { left, top } = item.containerRef.getBoundingClientRect();
 
-        this.canvasX = left;
-        this.canvasY = top;
-        return item.event("mousedown", e, x, y);
+          this.canvasX = left;
+          this.canvasY = top;
+          item.event('mousedown', e, x, y);
+
+          return true;
+        }
+      };
+
+      const selectedTool = item.getToolsManager().findSelectedTool();
+      const eligibleToolForDeselect = [
+        undefined,
+        'EllipseTool',
+        'EllipseTool-dynamic',
+        'RectangleTool',
+        'RectangleTool-dynamic',
+        'PolygonTool',
+        'PolygonTool-dynamic',
+        'Rectangle3PointTool',
+        'Rectangle3PointTool-dynamic',
+      ].includes(selectedTool?.fullName);
+
+      if (isFF(FF_DEV_1442) && eligibleToolForDeselect) {
+        const targetIsCanvas = e.target === item.stageRef;
+        const annotationHasSelectedRegions = item.annotation.selectedRegions.length > 0;
+        const eligibleToDeselect = targetIsCanvas && annotationHasSelectedRegions;
+
+        const handleDeselection = () => {
+          item.annotation.unselectAll();
+          this.skipMouseUp = true;
+        };
+
+        this.handleDeferredClick(handleMouseDown, handleDeselection, eligibleToDeselect);
+        return;
       }
+
+      const result = handleMouseDown();
+
+      if (result) return result;
 
       return true;
     };
@@ -390,26 +568,26 @@ export default observer(
      * Mouse up outside the canvas
      */
     handleGlobalMouseUp = e => {
-      window.removeEventListener("mousemove", this.handleGlobalMouseMove);
-      window.removeEventListener("mouseup", this.handleGlobalMouseUp);
+      window.removeEventListener('mousemove', this.handleGlobalMouseMove);
+      window.removeEventListener('mouseup', this.handleGlobalMouseUp);
 
-      if (e.target && e.target.tagName === "CANVAS") return;
+      if (e.target && e.target.tagName === 'CANVAS') return;
 
       const { item } = this.props;
       const { clientX: x, clientY: y } = e;
 
       item.freezeHistory();
 
-      return item.event("mouseup", e, x - this.canvasX, y - this.canvasY);
+      return item.event('mouseup', e, x - this.canvasX, y - this.canvasY);
     };
 
     handleGlobalMouseMove = e => {
-      if (e.target && e.target.tagName === "CANVAS") return;
+      if (e.target && e.target.tagName === 'CANVAS') return;
 
       const { item } = this.props;
       const { clientX: x, clientY: y } = e;
 
-      return item.event("mousemove", e, x - this.canvasX, y - this.canvasY);
+      return item.event('mousemove', e, x - this.canvasX, y - this.canvasY);
     };
 
     /**
@@ -418,10 +596,14 @@ export default observer(
     handleMouseUp = e => {
       const { item } = this.props;
 
+      if (isFF(FF_DEV_1442)) {
+        this.resetDeferredClickTimeout();
+      }
+
       item.freezeHistory();
       item.setSkipInteractions(false);
 
-      return item.event("mouseup", e, e.evt.offsetX, e.evt.offsetY);
+      return item.event('mouseup', e, e.evt.offsetX, e.evt.offsetY);
     };
 
     handleMouseMove = e => {
@@ -432,7 +614,13 @@ export default observer(
       this.updateCrosshair(e);
 
       const isMouseWheelClick = e.evt && e.evt.buttons === 4;
-      const isShiftDrag = e.evt && e.evt.buttons === 1 && e.evt.shiftKey;
+      const isDragging = e.evt && e.evt.buttons === 1;
+      const isShiftDrag = isDragging && e.evt.shiftKey;
+
+      if (isFF(FF_DEV_1442) && isDragging) {
+        this.resetDeferredClickTimeout();
+        this.handleDeferredMouseDown?.();
+      }
 
       if ((isMouseWheelClick || isShiftDrag) && item.zoomScale > 1) {
         item.setSkipInteractions(true);
@@ -445,7 +633,7 @@ export default observer(
 
         item.setZoomPosition(newPos.x, newPos.y);
       } else {
-        item.event("mousemove", e, e.evt.offsetX, e.evt.offsetY);
+        item.event('mousemove', e, e.evt.offsetX, e.evt.offsetY);
       }
     };
 
@@ -453,14 +641,14 @@ export default observer(
       if (this.crosshairRef.current) {
         const { x, y } = e.currentTarget.getPointerPosition();
 
-        this.crosshairRef.current.updatePointer(...this.props.item.fixZoomedCoords([x, y]));
+
       }
-    }
+    };
 
     handleError = () => {
       const { item, store } = this.props;
       const cs = store.annotationStore;
-      const message = messages.ERR_LOADING_HTTP({ attr: item.value, error: "", url: item._value });
+      const message = getEnv(store).messages.ERR_LOADING_HTTP({ attr: item.value, error: '', url: item._value });
 
       cs.addErrors([errorBuilder.generalError(message)]);
     };
@@ -499,7 +687,7 @@ export default observer(
     renderRulers() {
       const { item } = this.props;
       const width = 1;
-      const color = "white";
+      const color = 'white';
 
       return (
         <Group
@@ -532,27 +720,26 @@ export default observer(
       );
     }
 
-    onResize = () => {
-      if (!this.container) return;
-      if (this.container.offsetWidth <= 1) return;
-      if (this.lastOffsetWidth === this.container.offsetWidth) return;
+    onResize = debounce(() => {
+      if (!this?.props?.item?.containerRef) return;
+      const { offsetWidth, offsetHeight } = this.props.item.containerRef;
 
-      this.props.item.onResize(this.container.offsetWidth, this.container.offsetHeight, true);
-      this.lastOffsetWidth = this.container.offsetWidth;
-    };
+      if (this.props.item.naturalWidth <= 1) return;
+      if (this.lastOffsetWidth === offsetWidth && this.lastOffsetHeight === offsetHeight) return;
+
+      this.props.item.onResize(offsetWidth, offsetHeight, true);
+      this.lastOffsetWidth = offsetWidth;
+      this.lastOffsetHeight = offsetHeight;
+    }, 16);
 
     componentDidMount() {
-      window.addEventListener("resize", this.onResize);
-      this.attachObserver(this.container);
+      const { item } = this.props;
 
-      if (this.props.item && isAlive(this.props.item)) {
-        this.updateImageTransform();
-        this.observerObjectUpdate();
-      }
-
+      window.addEventListener('resize', this.onResize);
+      this.attachObserver(item.containerRef);
       this.updateReadyStatus();
 
-      hotkeys.addDescription("shift", "Pan image");
+      hotkeys.addDescription('shift', 'Pan image');
     }
 
     attachObserver = (node) => {
@@ -560,31 +747,26 @@ export default observer(
 
       if (node) {
         this.resizeObserver = new ResizeObserver(this.onResize);
-        this.resizeObserver.observe(this.container);
+        this.resizeObserver.observe(node);
       }
-    }
+    };
 
     detachObserver = () => {
       if (this.resizeObserver) {
         this.resizeObserver.disconnect();
         this.resizeObserver = null;
       }
-    }
+    };
 
     componentWillUnmount() {
       this.detachObserver();
-      window.removeEventListener("resize", this.onResize);
-      this.propsObserverDispose.forEach(dispose => dispose());
+      window.removeEventListener('resize', this.onResize);
 
-      hotkeys.removeDescription("shift");
+      hotkeys.removeDescription('shift');
     }
 
-    componentDidUpdate(prevProps) {
+    componentDidUpdate() {
       this.onResize();
-
-      if (prevProps.item !== this.props.item && isAlive(this.props.item)) {
-        this.observerObjectUpdate();
-      }
       this.updateReadyStatus();
     }
 
@@ -596,77 +778,6 @@ export default observer(
       if (item.isReady !== imageRef.current.complete) item.setReady(imageRef.current.complete);
     }
 
-    observerObjectUpdate(){
-      this.propsObserverDispose.forEach(dispose => dispose());
-      this.propsObserverDispose = [
-        'width',
-        'brightnessGrade',
-        'contrastGrade',
-        'zoomScale',
-        'resize',
-        'rotation',
-        'naturalWidth',
-        'naturalHeight',
-        'zoomingPositionY',
-        'zoomingPositionX',
-      ].map((prop) => {
-        return observe(this.props.item, prop, this.updateImageTransform, true);
-      });
-    }
-
-    updateImageTransform = () => {
-      const { item } = this.props;
-
-      let ratio = 1;
-
-      const imgStyle = {
-        width: item.width,
-        transformOrigin: "left top",
-        transform: 'none',
-        filter: `brightness(${item.brightnessGrade}%) contrast(${item.contrastGrade}%)`,
-      };
-
-      const imgTransform = [];
-
-      if (item.zoomScale !== 1) {
-        const { zoomingPositionX, zoomingPositionY } = item;
-
-        imgTransform.push("translate(" + zoomingPositionX + "px," + zoomingPositionY + "px)");
-        imgTransform.push("scale(" + item.resize + ", " + item.resize + ")");
-      }
-
-      if (item.rotation) {
-        const translate = {
-          90: `0, -100%`,
-          180: `-100%, -100%`,
-          270: `-100%, 0`,
-        };
-
-        // there is a top left origin already set for zoom; so translate+rotate
-        imgTransform.push(`rotate(${item.rotation}deg)`);
-        imgTransform.push(`translate(${translate[item.rotation] || "0, 0"})`);
-
-        if ([90, 270].includes(item.rotation)) {
-          // we can not rotate img itself, so we change container's size via css margin hack, ...
-          ratio = item.naturalWidth / item.naturalHeight;
-          // ... prepare image size for transform rotation and use position: absolute
-          imgStyle.width = `${ratio * 100}%`;
-        }
-      }
-
-      if (imgTransform?.length > 0) {
-        imgStyle.transform = imgTransform.join(" ");
-      }
-
-      if (this.imageRef.current) {
-        Object.assign(this.imageRef.current.style, imgStyle);
-      }
-
-      if (this.state.ratio !== ratio) {
-        this.setState({ ratio });
-      }
-    }
-
     renderTools() {
       const { item, store } = this.props;
       const cs = store.annotationStore;
@@ -676,11 +787,12 @@ export default observer(
       const tools = item.getToolsManager().allTools();
 
       return (
-        <Toolbar tools={tools}/>
+        <Toolbar tools={tools} />
       );
     }
 
     render() {
+
       const { item, store } = this.props;
 
       // @todo stupid but required check for `resetState()`
@@ -694,15 +806,29 @@ export default observer(
 
       const containerStyle = {};
 
-      let containerClassName = styles.container;
-
-      if (this.state.ratio !== 1) {
-        containerClassName += " " + styles.rotated;
-      }
+      const containerClassName = styles.container;
 
       if (getRoot(item).settings.fullscreen === false) {
-        containerStyle["maxWidth"] = item.maxwidth;
+        containerStyle['maxWidth'] = item.maxwidth;
+        containerStyle['maxHeight'] = item.maxheight;
+        containerStyle['width'] = item.width;
+        containerStyle['height'] = item.height;
       }
+
+      if (!this.props.store.settings.enableSmoothing && item.zoomScale > 1){
+        containerStyle['imageRendering'] = 'pixelated';
+      }
+
+      const imagePositionClassnames =  [
+        styles['image_position'],
+        styles[`image_position__${item.verticalalignment === 'center' ? 'middle' : item.verticalalignment}`],
+        styles[`image_position__${item.horizontalalignment}`],
+      ];
+
+      const wrapperClasses = [
+        styles.wrapperComponent,
+        item.images.length > 1 ? styles.withGallery : styles.wrapper,
+      ];
 
       const {
         brushRegions,
@@ -724,125 +850,51 @@ export default observer(
       return (
         <ObjectTag
           item={item}
-          className={item.images.length > 1 ? styles.withGallery : styles.wrapper}
-          style={{
-            position: "relative",
-            display: "flex",
-            alignItems: "flex-start",
-            justifyContent: "space-between",
-          }}
+          className={wrapperClasses.join(' ')}
         >
           <div
             ref={node => {
-              this.container = node;
+              item.setContainerRef(node);
               this.attachObserver(node);
             }}
             className={containerClassName}
             style={containerStyle}
           >
-            {this.state.ratio !== 1 && (
-              <div
-                className={styles.filler}
-                style={{ marginTop: `${this.state.ratio * 100}%`, width: item.stageWidth }}
-              />
-            )}
-            <img
-              ref={ref => {
-                item.setImageRef(ref);
-                this.imageRef.current = ref;
+            <div
+              ref={node => {
+                this.filler = node;
               }}
-              src={item._value}
-              onLoad={item.updateImageSize}
-              onError={this.handleError}
-              alt="LS"
+              className={styles.filler}
+              style={{ width: '100%', marginTop: item.fillerHeight }}
             />
-          </div>
-          {/* @todo this is dirty hack; rewrite to proper async waiting for data to load */}
-          {item.stageWidth <= 1 ? (item.hasTools?<div className={styles.loading}><LoadingOutlined /></div>:null) : (
-            <Stage
-              ref={ref => {
-                item.setStageRef(ref);
-              }}
-              style={{ position: "absolute", top: 0, left: 0 }}
-              className={"image-element"}
-              width={item.stageComponentSize.width}
-              height={item.stageComponentSize.height}
-              scaleX={item.stageScale}
-              scaleY={item.stageScale}
-              x={item.zoomingPositionX}
-              y={item.zoomingPositionY}
-              offsetX={item.stageTranslate.x}
-              offsetY={item.stageTranslate.y}
-              rotation={item.rotation}
-              onClick={this.handleOnClick}
-              onMouseEnter={() => {
-                if (this.crosshairRef.current) {
-                  this.crosshairRef.current.updateVisibility(true);
-                }
-              }}
-              onMouseLeave={() => {
-                if (this.crosshairRef.current) {
-                  this.crosshairRef.current.updateVisibility(false);
-                }
-              }}
-              onDragMove={this.updateCrosshair}
-              onMouseDown={this.handleMouseDown}
-              onMouseMove={this.handleMouseMove}
-              onMouseUp={this.handleMouseUp}
-              onWheel={item.zoom ? this.handleZoom : () => {}}
+            <div
+              className={[
+                styles.frame,
+                ...imagePositionClassnames,
+              ].join(' ')}
+              style={item.canvasSize}
             >
-              {/* Hack to keep stage in place when there's no regions */}
-              {regions.length === 0 && (
-                <Layer>
-                  <Line points={[0,0,0,1]} stroke="rgba(0,0,0,0)"/>
-                </Layer>
-              )}
-              {item.grid && item.sizeUpdated && <ImageGrid item={item} />}
-
-              {renderableRegions.map(([groupName, list]) => {
-                const isBrush = groupName.match(/brush/i) !== null;
-                const isSuggestion = groupName.match('suggested') !== null;
-
-                return list.length > 0 ? (
-                  <Regions
-                    key={groupName}
-                    name={groupName}
-                    regions={list}
-                    useLayers={isBrush === false}
-                    suggestion={isSuggestion}
+              <img
+                ref={ref => {
+                  item.setImageRef(ref);
+                  this.imageRef.current = ref;
+                }}
+                loading={(isFF(FF_DEV_3077) && !item.lazyoff) && 'lazy'}
+                style={item.imageTransform}
+                src={item._value}
+                onLoad={item.updateImageSize}
+                onError={this.handleError}
+                crossOrigin={item.imageCrossOrigin}
+                alt="LS"
+              />
+              {isFF(FF_DEV_4081)
+                ? (
+                  <canvas
+                    className={styles.overlay}
+                    ref={ref => {
+                      item.setOverlayRef(ref);
+                    }}
+                    style={item.imageTransform}
                   />
-                ) : <Fragment key={groupName}/>;
-              })}
 
-              <Selection item={item} selectionArea={item.selectionArea}/>
-              <DrawingRegion item={item}/>
 
-              {item.crosshair && (
-                <Crosshair
-                  ref={this.crosshairRef}
-                  width={item.stageWidth}
-                  height={item.stageHeight}
-                />
-              )}
-            </Stage>
-          )}
-          {this.renderTools()}
-          {item.images.length > 1 && (
-            <div className={styles.gallery}>
-              {item.images.map((src, i) => (
-                <img
-                  alt=""
-                  key={src}
-                  src={src}
-                  className={i === item.currentImage && styles.active}
-                  height="60"
-                  onClick={() => item.setCurrentImage(i)}
-                />
-              ))}
-            </div>
-          )}
-        </ObjectTag>
-      );
-    }
-  },
-);

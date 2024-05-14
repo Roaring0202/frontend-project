@@ -7,8 +7,6 @@ import {
   FC,
   forwardRef,
   FunctionComponent,
-  HTMLAttributes,
-  MutableRefObject,
   ReactHTML,
   ReactSVG,
   useContext
@@ -18,7 +16,7 @@ interface CNMod {
   [key: string]: unknown;
 }
 
-interface CN {
+export interface CN {
   block: (name: string) => CN;
   elem: (name: string) => CN;
   mod: (mods?: CNMod) => CN;
@@ -118,7 +116,7 @@ const assembleClass = (block: string, elem?: string, mix?: CNMix | CNMix[], mod?
     else return `${CSS_PREFIX}${cls}`;
   };
 
-  return finalClass.map(attachNamespace).join(" ");
+  return finalClass.map(attachNamespace).join(' ');
 };
 
 const BlockContext = createContext<CN | null>(null);
@@ -209,7 +207,7 @@ export const BemWithSpecifiContext = (context?: Context<CN | null>) => {
   });
 
   const Elem = forwardRef(<T extends FC<any>, D extends TagNames>({
-    tag = "div",
+    tag = 'div',
     component,
     block,
     name,
@@ -244,5 +242,7 @@ export const BemWithSpecifiContext = (context?: Context<CN | null>) => {
 
 export const { Block, Elem } = BemWithSpecifiContext(BlockContext);
 
-
+export const useBEM = () => {
+  return useContext(BlockContext)!;
+};
 

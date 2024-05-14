@@ -1,9 +1,9 @@
 // stub file to keep docs for HyperText object tag
 
 /**
- * The HyperText tag displays hypertext markup for labeling. Use for labeling HTML-encoded text and webpages for NER and NLP projects.
+ * The `HyperText` tag displays hypertext markup for labeling. Use for labeling HTML-encoded text and webpages for NER and NLP projects.
  *
- * Use with the following data types: HTML
+ * Use with the following data types: HTML.
  * @example
  * <!--Labeling configuration to label HTML content -->
  * <View>
@@ -15,7 +15,11 @@
  *   </Labels>
  * </View>
  * @example
- * <HyperText name="p1" value="<p>Some explanations <em>with style</em></p>" />
+ * <View>
+ *   <HyperText name="p1">
+ *     <p>Some explanations <em>with style</em></p>
+ *   </HyperText>
+ * </View>
  * @name HyperText
  * @regions HyperTextRegion
  * @meta_title Hypertext Tags for Hypertext Markup (HTML)

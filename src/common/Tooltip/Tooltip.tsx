@@ -1,14 +1,15 @@
-import { Children, cloneElement, CSSProperties, forwardRef, MouseEvent, MutableRefObject, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { createPortal } from "react-dom";
-import { Block, Elem } from "../../utils/bem";
-import { aroundTransition } from "../../utils/transition";
-import { alignElements, ElementAlignment } from "../../utils/dom";
-import "./Tooltip.styl";
+import { Children, cloneElement, CSSProperties, forwardRef, MutableRefObject, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { Block, Elem } from '../../utils/bem';
+import { aroundTransition } from '../../utils/transition';
+import { alignElements, ElementAlignment } from '../../utils/dom';
+import './Tooltip.styl';
+import { useFullscreen } from '../../hooks/useFullscreen';
 
 export interface TooltipProps {
   title: string;
   children: JSX.Element;
-  theme?: "light" | "dark";
+  theme?: 'light' | 'dark';
   defaultVisible?: boolean;
   mouseEnterDelay?: number;
   enabled?: boolean;
@@ -21,19 +22,19 @@ export const Tooltip = forwardRef<HTMLElement, TooltipProps>(({
   defaultVisible,
   mouseEnterDelay = 0,
   enabled = true,
-  theme = "dark",
+  theme = 'dark',
   style,
 }, ref) => {
   if (!children || Array.isArray(children)) {
-    throw new Error("Tooltip does accept a single child only");
+    throw new Error('Tooltip does accept a single child only');
   }
 
   const triggerElement = (ref ?? useRef<HTMLElement>()) as MutableRefObject<HTMLElement>;
   const tooltipElement = useRef<HTMLElement>();
   const [offset, setOffset] = useState({});
-  const [visibility, setVisibility] = useState(defaultVisible ? "visible" : null);
+  const [visibility, setVisibility] = useState(defaultVisible ? 'visible' : null);
   const [injected, setInjected] = useState(false);
-  const [align, setAlign] = useState<ElementAlignment>("top-center");
+  const [align, setAlign] = useState<ElementAlignment>('top-center');
 
   const calculatePosition = useCallback(() => {
     const { left, top, align: resultAlign } = alignElements(
@@ -47,83 +48,107 @@ export const Tooltip = forwardRef<HTMLElement, TooltipProps>(({
     setAlign(resultAlign);
   }, [triggerElement.current, tooltipElement.current]);
 
-  const performAnimation = useCallback(
-    visible => {
-      if (tooltipElement.current) {
-        aroundTransition(tooltipElement.current, {
-          beforeTransition() {
-            setVisibility(visible ? "before-appear" : "before-disappear");
-          },
-          transition() {
-            if (visible) calculatePosition();
-            setVisibility(visible ? "appear" : "disappear");
-          },
-          afterTransition() {
-            setVisibility(visible ? "visible" : null);
-            if (visible === false) setInjected(false);
-          },
-        });
+  const performAnimation = useCallback((visible: boolean, disableAnimation?: boolean) => {
+    if (tooltipElement.current) {
+      if (disableAnimation) {
+        setInjected(false);
+        return;
       }
-    },
-    [injected, calculatePosition, tooltipElement],
-  );
+
+      aroundTransition(tooltipElement.current, {
+        beforeTransition() {
+          setVisibility(visible ? 'before-appear' : 'before-disappear');
+        },
+        transition() {
+          if (visible) calculatePosition();
+          setVisibility(visible ? 'appear' : 'disappear');
+        },
+        afterTransition() {
+          setVisibility(visible ? 'visible' : null);
+          if (visible === false) setInjected(false);
+        },
+      });
+    }
+  }, [calculatePosition, tooltipElement]);
 
   const visibilityClasses = useMemo(() => {
     switch (visibility) {
-      case "before-appear":
-        return "before-appear";
-      case "appear":
-        return "appear before-appear";
-      case "before-disappear":
-        return "before-disappear";
-      case "disappear":
-        return "disappear before-disappear";
-      case "visible":
-        return "visible";
+      case 'before-appear':
+        return 'before-appear';
+      case 'appear':
+        return 'appear before-appear';
+      case 'before-disappear':
+        return 'before-disappear';
+      case 'disappear':
+        return 'disappear before-disappear';
+      case 'visible':
+        return 'visible';
       default:
-        return visibility ? "visible" : null;
+        return visibility ? 'visible' : null;
     }
   }, [visibility]);
 
-  const tooltip = useMemo(
-    () =>
-      injected ? (
-        <Block
-          ref={tooltipElement}
-          name="tooltip"
-          mod={{ align, theme }}
-          mix={visibilityClasses}
-          style={{ ...offset, ...(style ?? {}) }}
-        >
-          <Elem name="body">{title}</Elem>
-        </Block>
-      ) : null,
-    [injected, offset, title, visibilityClasses, tooltipElement],
-  );
+  const tooltip = useMemo(() => {
+    return injected ? (
+      <Block
+        ref={tooltipElement}
+        name="tooltip"
+        mod={{ align, theme }}
+        mix={visibilityClasses}
+        style={{ ...offset, ...(style ?? {}) }}
+      >
+        <Elem name="body">{title}</Elem>
+      </Block>
+    ) : null;
+  }, [injected, offset, title, visibilityClasses, tooltipElement]);
 
   const child = Children.only(children);
   const clone = cloneElement(child, {
     ...child.props,
     ref: triggerElement,
-    onMouseEnter(e: MouseEvent<HTMLElement>) {
-      if (enabled === false) return;
-
-      setTimeout(() => {
-        setInjected(true);
-        child.props.onMouseEnter?.(e);
-      }, mouseEnterDelay);
-    },
-    onMouseLeave(e: MouseEvent<HTMLElement>) {
-      if (enabled === false) return;
-
-      performAnimation(false);
-      child.props.onMouseLeave?.(e);
-    },
   });
 
   useEffect(() => {
     if (injected) performAnimation(true);
   }, [injected]);
+
+  useEffect(() => {
+    const el = triggerElement.current;
+
+    const handleTooltipAppear = () => {
+      if (enabled === false) return;
+
+      setTimeout(() => {
+        setInjected(true);
+      }, mouseEnterDelay);
+    };
+
+    const handleTooltipHiding = () => {
+      if (enabled === false) return;
+
+      performAnimation(false);
+    };
+
+    if (el) {
+      el.addEventListener('mouseenter', handleTooltipAppear);
+      el.addEventListener('mouseleave', handleTooltipHiding);
+      window.addEventListener('scroll', handleTooltipHiding);
+    }
+
+    return () => {
+      if (el) {
+        el.removeEventListener('mouseenter', handleTooltipAppear);
+        el.removeEventListener('mouseleave', handleTooltipHiding);
+        window.removeEventListener('scroll', handleTooltipHiding);
+      }
+    };
+  }, [enabled, mouseEnterDelay]);
+
+  useFullscreen({
+    onEnterFullscreen: () => performAnimation(false, true),
+    onExitFullscreen: () => performAnimation(false, true),
+  }, []);
+
 
   return (
     <>
@@ -132,4 +157,5 @@ export const Tooltip = forwardRef<HTMLElement, TooltipProps>(({
     </>
   );
 });
-Tooltip.displayName = "Tooltip";
+
+Tooltip.displayName = 'Tooltip';

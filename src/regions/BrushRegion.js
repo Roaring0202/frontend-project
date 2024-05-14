@@ -1,27 +1,28 @@
-import React, { useCallback, useContext, useMemo, useRef, useState } from "react";
-import { Group, Image, Layer, Shape } from "react-konva";
-import { observer } from "mobx-react";
-import { getParent, getRoot, hasParent, types } from "mobx-state-tree";
+import React, { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { Group, Image, Layer, Shape } from 'react-konva';
+import { observer } from 'mobx-react';
+import { getParent, getRoot, hasParent, types } from 'mobx-state-tree';
 
-import Canvas from "../utils/canvas";
-import NormalizationMixin from "../mixins/Normalization";
-import RegionsMixin from "../mixins/Regions";
-import Registry from "../core/Registry";
-import WithStatesMixin from "../mixins/WithStates";
-import { ImageModel } from "../tags/object/Image";
-import { LabelOnMask } from "../components/ImageView/LabelOnRegion";
-import { guidGenerator } from "../core/Helpers";
-import { AreaMixin } from "../mixins/AreaMixin";
-import { colorToRGBAArray, rgbArrayToHex } from "../utils/colors";
-import { defaultStyle } from "../core/Constants";
-import { AliveRegion } from "./AliveRegion";
-import { KonvaRegionMixin } from "../mixins/KonvaRegion";
-import { RegionWrapper } from "./RegionWrapper";
-import { Geometry } from "../components/RelationsOverlay/Geometry";
-import { ImageViewContext } from "../components/ImageView/ImageViewContext";
+import Canvas from '../utils/canvas';
+import NormalizationMixin from '../mixins/Normalization';
+import RegionsMixin from '../mixins/Regions';
+import Registry from '../core/Registry';
+import { ImageModel } from '../tags/object/Image';
+import { LabelOnMask } from '../components/ImageView/LabelOnRegion';
+import { guidGenerator } from '../core/Helpers';
+import { AreaMixin } from '../mixins/AreaMixin';
+import { colorToRGBAArray, rgbArrayToHex } from '../utils/colors';
+import { defaultStyle } from '../core/Constants';
+import { AliveRegion } from './AliveRegion';
+import { KonvaRegionMixin } from '../mixins/KonvaRegion';
+import { RegionWrapper } from './RegionWrapper';
+import { Geometry } from '../components/RelationsOverlay/Geometry';
+import { ImageViewContext } from '../components/ImageView/ImageViewContext';
+import IsReadyMixin from '../mixins/IsReadyMixin';
+import { FF_DEV_4081, isFF } from '../utils/feature-flags';
 
 const highlightOptions = {
-  shadowColor: "red",
+  shadowColor: 'red',
   shadowBlur: 1,
   shadowOffsetY: 2,
   shadowOffsetX: 2,
@@ -29,9 +30,9 @@ const highlightOptions = {
 };
 
 const Points = types
-  .model("Points", {
+  .model('Points', {
     id: types.optional(types.identifier, guidGenerator),
-    type: types.optional(types.enumeration(["add", "eraser"]), "add"),
+    type: types.optional(types.enumeration(['add', 'eraser']), 'add'),
     points: types.array(types.number),
     relativePoints: types.array(types.number),
 
@@ -57,7 +58,7 @@ const Points = types
       return self.parent?.parent;
     },
     get compositeOperation() {
-      return self.type === "add" ? "source-over" : "destination-out";
+      return self.type === 'add' ? 'source-over' : 'destination-out';
     },
   }))
   .actions(self => {
@@ -114,12 +115,14 @@ const Model = types
     id: types.optional(types.identifier, guidGenerator),
     pid: types.optional(types.string, guidGenerator),
 
-    type: "brushregion",
+    type: 'brushregion',
     object: types.late(() => types.reference(ImageModel)),
 
-    coordstype: types.optional(types.enumeration(["px", "perc"]), "perc"),
+    coordstype: types.optional(types.enumeration(['px', 'perc']), 'perc'),
 
     rle: types.frozen(),
+
+    maskDataURL: types.frozen(),
 
     touches: types.array(Points),
     currentTouch: types.maybeNull(types.reference(Points)),
@@ -144,7 +147,7 @@ const Model = types
     // points: types.array(types.array(types.number)),
     // eraserpoints: types.array(types.array(types.number)),
 
-    mode: "brush",
+    mode: 'brush',
 
     needsUpdate: 1,
     hideable: true,
@@ -168,7 +171,23 @@ const Model = types
         return self.touches.length;
       },
       get bboxCoords() {
-        if (!self.imageData) return null;
+        if (!self.imageData) {
+          const points = { x: [], y:[] };
+
+          for(let i = 0; i in (self.touches?.[0]?.points ?? []); i += 2) {
+            const curX = (self.touches?.[0]?.points ?? [])[i];
+            const curY = (self.touches?.[0]?.points ?? [])[i+1];
+
+            points.x.push(curX);
+            points.y.push(curY);
+          }
+          return {
+            left: Math.min(...points.x),
+            top: Math.min(...points.y),
+            right: Math.max(...points.x),
+            bottom: Math.max(...points.y),
+          };
+        }
         const imageBBox = Geometry.getImageDataBBox(self.imageData.data, self.imageData.width, self.imageData.height);
 
         if (!imageBBox) return null;
@@ -209,8 +228,8 @@ const Model = types
       setLayerRef(ref) {
         if (ref) {
           ref.canvas._canvas.style.opacity = self.opacity;
+          self.layerRef = ref;
         }
-        self.layerRef = ref;
       },
 
       cacheImageData() {
@@ -218,7 +237,7 @@ const Model = types
           self.imageData = null;
         } else {
           const canvas = self.layerRef.toCanvas();
-          const ctx = canvas.getContext("2d");
+          const ctx = canvas.getContext('2d');
 
           self.imageData = ctx.getImageData(0, 0, self.layerRef.canvas.width, self.layerRef.canvas.height);
         }
@@ -246,8 +265,8 @@ const Model = types
           }
         }
         ctx.lineTo(...self.prepareCoords([x, y]));
-        ctx.lineCap = "round";
-        ctx.lineJoin = "round";
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
         ctx.lineWidth = pathPoints.strokeWidth * self.scaleX * self.parent.stageScale;
         ctx.strokeStyle = self.strokeColor;
         ctx.globalCompositeOperation = pathPoints.compositeOperation;
@@ -295,6 +314,20 @@ const Model = types
         annotation.autosave && setTimeout(() => annotation.autosave());
       },
 
+      endUpdatedMaskDataURL(maskDataURL) {
+        const { annotation } = self.object;
+
+        // will resume in the next tick...
+        annotation.startAutosave();
+
+        self.maskDataURL = maskDataURL;
+
+        self.notifyDrawingFinished();
+
+        // ...so we run this toggled function also delayed
+        annotation.autosave && setTimeout(() => annotation.autosave());
+      },
+
       convertPointsToMask() {},
 
       setScale(x, y) {
@@ -303,7 +336,7 @@ const Model = types
       },
 
       updateImageSize(wp, hp, sw, sh) {
-        if (self.parent.initialWidth > 1 && self.parent.initialHeight > 1) {
+        if (self.parent.stageWidth > 1 && self.parent.stageHeight > 1) {
           self.touches.forEach(stroke => stroke.updateImageSize(wp, hp, sw, sh));
 
           self.needsUpdate = self.needsUpdate + 1;
@@ -339,27 +372,28 @@ const Model = types
        *   }
        * }
        * @typedef {Object} BrushRegionResult
-       * @property {number} original_width width of the original image (px)
-       * @property {number} original_height height of the original image (px)
-       * @property {number} image_rotation rotation degree of the image (deg)
+       * @property {number} original_width  - Width of the original image (px)
+       * @property {number} original_height - Height of the original image (px)
+       * @property {number} image_rotation  - Rotation degree of the image (deg)
        * @property {Object} value
-       * @property {"rle"} value.format format of the masks, only RLE is supported for now
-       * @property {number[]} value.rle RLE-encoded image
+       * @property {"rle"} value.format     - Format of the masks, only RLE is supported for now
+       * @property {number[]} value.rle     - RLE-encoded image
        */
 
       /**
        * @param {object} options
-       * @param {boolean} [options.fast] saving only touches, without RLE
+       * @param {boolean} [options.fast] Saving only touches, without RLE
        * @return {BrushRegionResult}
        */
       serialize(options) {
         const object = self.object;
-        const value = { format: "rle" };
+        const value = { format: 'rle' };
 
         if (options?.fast) {
           value.rle = self.rle;
 
           if (self.touches.length) value.touches = self.touches;
+          if (self.maskDataURL) value.maskDataURL = self.maskDataURL;
         } else {
           const rle = Canvas.Region2RLE(self, object);
 
@@ -382,12 +416,12 @@ const Model = types
   });
 
 const BrushRegionModel = types.compose(
-  "BrushRegionModel",
-  WithStatesMixin,
+  'BrushRegionModel',
   RegionsMixin,
   NormalizationMixin,
   AreaMixin,
   KonvaRegionMixin,
+  IsReadyMixin,
   Model,
 );
 
@@ -399,8 +433,8 @@ const HtxBrushLayer = observer(({ item, pointsList }) => {
     for (let i = 0; i < points.length / 2; i++) {
       ctx.lineTo(points[2 * i], points[2 * i + 1]);
     }
-    ctx.lineCap = "round";
-    ctx.lineJoin = "round";
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
     ctx.lineWidth = strokeWidth;
     ctx.strokeStyle = strokeColor;
     ctx.globalCompositeOperation = compositeOperation;
@@ -428,8 +462,8 @@ const HtxBrushLayer = observer(({ item, pointsList }) => {
         drawLine(context, {
           points: points.points,
           strokeWidth: points.strokeWidth,
-          strokeColor: points.type === "eraser" ? "#ffffff" : shape.colorKey,
-          compositeOperation: "source-over",
+          strokeColor: points.type === 'eraser' ? '#ffffff' : shape.colorKey,
+          compositeOperation: 'source-over',
         });
       });
     },
@@ -444,17 +478,43 @@ const HtxBrushView = ({ item }) => {
   const { suggestion } = useContext(ImageViewContext) ?? {};
 
   // Prepare brush stroke from RLE with current stroke color
-  useMemo(() => {
-    if (!item.rle || !item.parent || item.parent.naturalWidth <=1 || item.parent.naturalHeight <= 1) return;
-    const img = Canvas.RLE2Region(item.rle, item.parent, { color: item.strokeColor });
+  useEffect(async function() {
 
-    img.onload = () => setImage(img);
+    // Two possible ways to draw an image from precreated data:
+    // - rle - An RLE encoded RGBA image
+    // - maskDataURL - an RGBA mask encoded as an image data URL that can be directly placed into
+    //  an image without having to go through an RLE encode/decode loop to save performance for tools
+    //  that dynamically produce image masks.
+
+    if (!item.rle && !item.maskDataURL) return;
+    if (!item.parent || item.parent.naturalWidth <=1 || item.parent.naturalHeight <= 1) return;
+
+    let img;
+
+    if (item.maskDataURL && isFF(FF_DEV_4081)) {
+      img = await Canvas.maskDataURL2Image(item.maskDataURL, { color: item.strokeColor });
+    } else if (item.rle) {
+      img = Canvas.RLE2Region(item.rle, item.parent, { color: item.strokeColor });
+    }
+
+    if (img) {
+      img.onload = () => {
+        setImage(img);
+        item.setReady(true);
+      };
+    }
   }, [
     item.rle,
+    item.maskDataURL,
+    item.maskBoundsMinX,
+    item.maskBoundsMinY,
+    item.maskBoundsMaxX,
+    item.maskBoundsMaxY,
     item.parent,
     item.parent?.naturalWidth,
     item.parent?.naturalHeight,
     item.strokeColor,
+    item.opacity,
   ]);
 
   // Drawing hit area by shape color to detect interactions inside the Konva
@@ -494,7 +554,7 @@ const HtxBrushView = ({ item }) => {
   const drawCallback = useMemo(()=>{
     let done = false;
 
-    return () => {
+    return async function() {
       const { highlighted } = highlightedRef.current;
       const layer = layerRef.current;
       const isDrawing = item.parent?.drawingRegion === item;
@@ -503,7 +563,7 @@ const HtxBrushView = ({ item }) => {
       let highlightEl;
 
       if (highlighted) {
-        highlightEl = layer.findOne(".highlight");
+        highlightEl = layer.findOne('.highlight');
         highlightEl.hide();
       }
       layer.draw();
@@ -520,7 +580,19 @@ const HtxBrushView = ({ item }) => {
       highlightedImageRef.current.src = dataUrl;
       done = true;
     };
-  }, [item.touches.length, item.strokeColor, item.parent.stageScale, store.annotationStore.selected?.id, item.parent?.zoomingPositionX, item.parent?.zoomingPositionY, item.parent?.stageWidth, item.parent?.stageHeight]);
+  }, [
+    item.touches.length,
+    item.strokeColor,
+    item.parent.stageScale,
+    store.annotationStore.selected?.id,
+    item.parent?.zoomingPositionX,
+    item.parent?.zoomingPositionY,
+    item.parent?.stageWidth,
+    item.parent?.stageHeight,
+    item.maskDataURL,
+    item.rle,
+    image,
+  ]);
 
   if (!item.parent) return null;
 
@@ -554,10 +626,10 @@ const HtxBrushView = ({ item }) => {
           onMouseOver={() => {
             if (store.annotationStore.selected.relationMode) {
               item.setHighlight(true);
-              stage.container().style.cursor = "crosshair";
+              stage.container().style.cursor = 'crosshair';
             } else {
               // no tool selected
-              if (!item.parent.getToolsManager().findSelectedTool()) stage.container().style.cursor = "pointer";
+              if (!item.parent.getToolsManager().findSelectedTool()) stage.container().style.cursor = 'pointer';
             }
           }}
           onMouseOut={() => {
@@ -566,7 +638,7 @@ const HtxBrushView = ({ item }) => {
             }
 
             if (!item.parent?.getToolsManager().findSelectedTool()) {
-              stage.container().style.cursor = "default";
+              stage.container().style.cursor = 'default';
             }
           }}
           onClick={e => {
@@ -579,13 +651,13 @@ const HtxBrushView = ({ item }) => {
             if (item.parent.getToolsManager().findSelectedTool()) return;
 
             if (store.annotationStore.selected.relationMode) {
-              stage.container().style.cursor = "default";
+              stage.container().style.cursor = 'default';
             }
 
             item.setHighlight(false);
             item.onClickRegion(e);
           }}
-          listening={!suggestion && item.editable}
+          listening={!suggestion}
         >
           {/* RLE */}
           <Image
@@ -618,7 +690,7 @@ const HtxBrushView = ({ item }) => {
         </Group>
       </Layer>
       <Layer
-        id={item.cleanId+"_labels"}
+        id={item.cleanId+'_labels'}
         ref={ref => {
           if (ref) {
             ref.canvas._canvas.style.opacity = item.opacity;
@@ -636,7 +708,7 @@ const HtxBrushView = ({ item }) => {
 
 const HtxBrush = AliveRegion(HtxBrushView, { renderHidden: true });
 
-Registry.addTag("brushregion", BrushRegionModel, HtxBrush);
-Registry.addRegionType(BrushRegionModel, "image", value => value.rle || value.touches);
+Registry.addTag('brushregion', BrushRegionModel, HtxBrush);
+Registry.addRegionType(BrushRegionModel, 'image', value => value.rle || value.touches || value.maskDataURL);
 
 export { BrushRegionModel, HtxBrush };

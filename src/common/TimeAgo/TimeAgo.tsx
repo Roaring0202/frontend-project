@@ -1,5 +1,5 @@
-import { format, formatDistanceToNow } from "date-fns";
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { format, formatDistanceToNow } from 'date-fns';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 const SECS = 1000;
 const MINS = 60 * SECS;
@@ -25,8 +25,8 @@ function getNextTick(passedTime = 0) {
   return Math.ceil((passedTime - baseLimit + 1) / baseStep) * baseStep + baseLimit;
 }
 
-type TimeAgoProps = React.ComponentPropsWithoutRef<"time"> & {
-  date: number | string | Date
+type TimeAgoProps = React.ComponentPropsWithoutRef<'time'> & {
+  date: number | string | Date,
 }
 
 export const TimeAgo = ({ date, ...rest }: TimeAgoProps) => {
@@ -53,8 +53,8 @@ export const TimeAgo = ({ date, ...rest }: TimeAgoProps) => {
 
   return (
     <time
-      dateTime={format(fromTS, "yyyy-MM-dd'T'HH:mm:ss.SSSxxx")}
-      title={format(fromTS, "PPpp")}
+      dateTime={format(fromTS, 'yyyy-MM-dd\'T\'HH:mm:ss.SSSxxx')}
+      title={format(fromTS, 'PPpp')}
       {...rest}
     >
       {formatDistanceToNow(fromTS, { addSuffix: true })}

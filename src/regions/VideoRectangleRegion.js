@@ -1,18 +1,17 @@
-import { types } from "mobx-state-tree";
+import { types } from 'mobx-state-tree';
 
-import NormalizationMixin from "../mixins/Normalization";
-import RegionsMixin from "../mixins/Regions";
-import WithStatesMixin from "../mixins/WithStates";
-import Registry from "../core/Registry";
-import { AreaMixin } from "../mixins/AreaMixin";
-import { interpolateProp, onlyProps, VideoRegion } from "./VideoRegion";
+import NormalizationMixin from '../mixins/Normalization';
+import RegionsMixin from '../mixins/Regions';
+import Registry from '../core/Registry';
+import { AreaMixin } from '../mixins/AreaMixin';
+import { interpolateProp, onlyProps, VideoRegion } from './VideoRegion';
 
 const Model = types
-  .model("VideoRectangleRegionModel", {
-    type: "videorectangleregion",
+  .model('VideoRectangleRegionModel', {
+    type: 'videorectangleregion',
   })
   .volatile(() => ({
-    props: ["x", "y", "width", "height", "rotation"],
+    props: ['x', 'y', 'width', 'height', 'rotation'],
   }))
   .views(self => ({
     getShape(frame) {
@@ -46,21 +45,27 @@ const Model = types
   .actions(self => ({
     updateShape(data, frame) {
       const newItem = {
+        ...data,
         frame,
         enabled: true,
-        rotation: 0,
-        ...data,
       };
+
+      const kp = self.closestKeypoint(frame);
       const index = self.sequence.findIndex(item => item.frame >= frame);
 
       if (index < 0) {
         self.sequence = [...self.sequence, newItem];
       } else {
-        const keypoint = self.sequence[index];
+        const keypoint = {
+          ...(self.sequence[index] ?? {}),
+          ...data,
+          enabled: kp?.enabled ?? true,
+          frame,
+        };
 
         self.sequence = [
           ...self.sequence.slice(0, index),
-          ({ ...keypoint, ...newItem }),
+          keypoint,
           ...self.sequence.slice(index + (self.sequence[index].frame === frame)),
         ];
       }
@@ -68,8 +73,7 @@ const Model = types
   }));
 
 const VideoRectangleRegionModel = types.compose(
-  "VideoRectangleRegionModel",
-  WithStatesMixin,
+  'VideoRectangleRegionModel',
   RegionsMixin,
   VideoRegion,
   AreaMixin,
@@ -77,6 +81,6 @@ const VideoRectangleRegionModel = types.compose(
   Model,
 );
 
-Registry.addRegionType(VideoRectangleRegionModel, "video");
+Registry.addRegionType(VideoRectangleRegionModel, 'video');
 
 export { VideoRectangleRegionModel };

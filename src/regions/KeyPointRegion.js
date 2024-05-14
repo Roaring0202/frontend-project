@@ -1,33 +1,33 @@
-import React, { Fragment, useContext } from "react";
-import { Circle } from "react-konva";
-import { getRoot, types } from "mobx-state-tree";
+import React, { Fragment, useContext } from 'react';
+import { Circle } from 'react-konva';
+import { getRoot, types } from 'mobx-state-tree';
 
-import WithStatesMixin from "../mixins/WithStates";
-import NormalizationMixin from "../mixins/Normalization";
-import RegionsMixin from "../mixins/Regions";
-import Registry from "../core/Registry";
-import { ImageModel } from "../tags/object/Image";
-import { guidGenerator } from "../core/Helpers";
-import { LabelOnKP } from "../components/ImageView/LabelOnRegion";
-import { AreaMixin } from "../mixins/AreaMixin";
-import { useRegionStyles } from "../hooks/useRegionColor";
-import { AliveRegion } from "./AliveRegion";
-import { KonvaRegionMixin } from "../mixins/KonvaRegion";
-import { createDragBoundFunc } from "../utils/image";
-import { ImageViewContext } from "../components/ImageView/ImageViewContext";
+import NormalizationMixin from '../mixins/Normalization';
+import RegionsMixin from '../mixins/Regions';
+import Registry from '../core/Registry';
+import { ImageModel } from '../tags/object/Image';
+import { guidGenerator } from '../core/Helpers';
+import { LabelOnKP } from '../components/ImageView/LabelOnRegion';
+import { AreaMixin } from '../mixins/AreaMixin';
+import { useRegionStyles } from '../hooks/useRegionColor';
+import { AliveRegion } from './AliveRegion';
+import { KonvaRegionMixin } from '../mixins/KonvaRegion';
+import { createDragBoundFunc } from '../utils/image';
+import { ImageViewContext } from '../components/ImageView/ImageViewContext';
+import { EditableRegion } from './EditableRegion';
 
 const Model = types
   .model({
     id: types.optional(types.identifier, guidGenerator),
     pid: types.optional(types.string, guidGenerator),
-    type: "keypointregion",
+    type: 'keypointregion',
     object: types.late(() => types.reference(ImageModel)),
 
     x: types.number,
     y: types.number,
 
     width: types.number,
-    coordstype: types.optional(types.enumeration(["px", "perc"]), "perc"),
+    coordstype: types.optional(types.enumeration(['px', 'perc']), 'perc'),
     negative: false,
   })
   .volatile(() => ({
@@ -38,6 +38,10 @@ const Model = types
     useTransformer: false,
     supportsRotate: false,
     supportsScale: false,
+    editableFields: [
+      { property: 'x', label: 'X' },
+      { property: 'y', label: 'Y' },
+    ],
   }))
   .views(self => ({
     get store() {
@@ -54,7 +58,7 @@ const Model = types
   }))
   .actions(self => ({
     afterCreate() {
-      if (self.coordstype === "perc") {
+      if (self.coordstype === 'perc') {
         // deserialization
         self.relativeX = self.x;
         self.relativeY = self.y;
@@ -86,16 +90,16 @@ const Model = types
     },
 
     updateImageSize(wp, hp, sw, sh) {
-      if (self.coordstype === "px") {
+      if (self.coordstype === 'px') {
         self.x = (sw * self.relativeX) / 100;
         self.y = (sh * self.relativeY) / 100;
       }
 
-      if (self.coordstype === "perc") {
+      if (self.coordstype === 'perc') {
         self.x = (sw * self.x) / 100;
         self.y = (sh * self.y) / 100;
         self.width = (sw * self.width) / 100;
-        self.coordstype = "px";
+        self.coordstype = 'px';
       }
     },
 
@@ -147,12 +151,12 @@ const Model = types
   }));
 
 const KeyPointRegionModel = types.compose(
-  "KeyPointRegionModel",
-  WithStatesMixin,
+  'KeyPointRegionModel',
   RegionsMixin,
   AreaMixin,
   NormalizationMixin,
   KonvaRegionMixin,
+  EditableRegion,
   Model,
 );
 
@@ -165,10 +169,11 @@ const HtxKeyPointView = ({ item }) => {
 
   const regionStyles = useRegionStyles(item, {
     includeFill: true,
-    defaultFillColor: "#000",
-    defaultStrokeColor: "#fff",
-    defaultFillOpacity: (item.style ?? item.tag) ? 0.6 : 1,
-    defaultStrokeWidth: 2,
+    defaultFillColor: '#000',
+    defaultStrokeColor: '#fff',
+    defaultOpacity: (item.style ?? item.tag) ? 0.6 : 1,
+    // avoid size glitching when user select/unselect region
+    sameStrokeWidthForSelected: true,
   });
 
   const props = {
@@ -187,11 +192,13 @@ const HtxKeyPointView = ({ item }) => {
       <Circle
         x={x}
         y={y}
-        radius={Math.max(item.width, 2)}
+        // keypoint should always be the same visual size
+        radius={Math.max(item.width, 2) / item.parent.zoomScale}
         // fixes performance, but opactity+borders might look not so good
         perfectDrawEnabled={false}
-        scaleX={1 / item.parent.zoomScale}
-        scaleY={1 / item.parent.zoomScale}
+        // for some reason this scaling doesn't work, so moved this to radius
+        // scaleX={1 / item.parent.zoomScale}
+        // scaleY={1 / item.parent.zoomScale}
         name={`${item.id} _transformable`}
         onDragStart={e => {
           if (item.parent.getSkipInteractions()) {
@@ -203,55 +210,43 @@ const HtxKeyPointView = ({ item }) => {
         onDragEnd={e => {
           const t = e.target;
 
-          item.setPosition(t.getAttr("x"), t.getAttr("y"));
+          item.setPosition(t.getAttr('x'), t.getAttr('y'));
           item.annotation.history.unfreeze(item.id);
           item.notifyDrawingFinished();
         }}
-        dragBoundFunc={createDragBoundFunc(item.parent, pos => {
-          const r = item.parent.stageWidth;
-          const b = item.parent.stageHeight;
-
-          let { x, y } = pos;
-
-          if (x < 0) x = 0;
-          if (y < 0) y = 0;
-
-          if (x > r) x = r;
-          if (y > b) y = b;
-
-          return { x, y };
-        })}
+        dragBoundFunc={createDragBoundFunc(item)}
+        transformsEnabled="position"
         onTransformEnd={e => {
           const t = e.target;
 
           item.setPosition(
-            t.getAttr("x"),
-            t.getAttr("y"),
+            t.getAttr('x'),
+            t.getAttr('y'),
           );
 
-          t.setAttr("scaleX", 1);
-          t.setAttr("scaleY", 1);
+          t.setAttr('scaleX', 1);
+          t.setAttr('scaleY', 1);
         }}
         onMouseOver={() => {
           if (store.annotationStore.selected.relationMode) {
             item.setHighlight(true);
-            stage.container().style.cursor = "crosshair";
+            stage.container().style.cursor = 'crosshair';
           } else {
-            stage.container().style.cursor = "pointer";
+            stage.container().style.cursor = 'pointer';
           }
         }}
         onMouseOut={() => {
-          stage.container().style.cursor = "default";
+          stage.container().style.cursor = 'default';
 
           if (store.annotationStore.selected.relationMode) {
             item.setHighlight(false);
           }
         }}
         onClick={e => {
-          if (!item.annotation.editable || item.parent.getSkipInteractions()) return;
+          if (item.parent.getSkipInteractions()) return;
 
           if (store.annotationStore.selected.relationMode) {
-            stage.container().style.cursor = "default";
+            stage.container().style.cursor = 'default';
           }
 
           item.setHighlight(false);
@@ -259,7 +254,7 @@ const HtxKeyPointView = ({ item }) => {
         }}
         {...props}
         draggable={item.editable}
-        listening={!suggestion && item.editable}
+        listening={!suggestion}
       />
       <LabelOnKP item={item} color={regionStyles.strokeColor}/>
     </Fragment>
@@ -268,11 +263,11 @@ const HtxKeyPointView = ({ item }) => {
 
 const HtxKeyPoint = AliveRegion(HtxKeyPointView);
 
-Registry.addTag("keypointregion", KeyPointRegionModel, HtxKeyPoint);
+Registry.addTag('keypointregion', KeyPointRegionModel, HtxKeyPoint);
 Registry.addRegionType(
   KeyPointRegionModel,
-  "image",
-  value => "x" in value && "y" in value && "width" in value && !("height" in value),
+  'image',
+  value => 'x' in value && 'y' in value && 'width' in value && !('height' in value),
 );
 
 export { KeyPointRegionModel, HtxKeyPoint };

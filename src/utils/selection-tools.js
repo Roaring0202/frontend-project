@@ -1,6 +1,6 @@
-import { clamp } from "./utilities";
+import { clamp, isDefined } from './utilities';
 
-const isTextNode = node => node && node.nodeType === Node.TEXT_NODE;
+export const isTextNode = node => node && node.nodeType === Node.TEXT_NODE;
 
 const isText = text => text && /[\w']/i.test(text);
 const isSpace = text => text && /[\s\t]/i.test(text);
@@ -37,7 +37,7 @@ const trimSelectionLeft = (selection) => {
 
   do {
     selection.collapse(currentRange.endContainer, currentRange.endOffset);
-    selection.modify("extend", "forward", "character");
+    selection.modify('extend', 'forward', 'character');
     currentRange = selection.getRangeAt(0);
   } while (!isTextNode(currentRange.startContainer) || isSpace(currentRange.startContainer.textContent[currentRange.startOffset]));
   resultRange.setStart(currentRange.startContainer, currentRange.startOffset);
@@ -53,7 +53,7 @@ const trimSelectionRight = (selection) => {
 
   do {
     selection.collapse(currentRange.startContainer, currentRange.startOffset);
-    selection.modify("extend", "backward", "character");
+    selection.modify('extend', 'backward', 'character');
     currentRange = selection.getRangeAt(0);
   } while (!isTextNode(currentRange.startContainer) || isSpace(currentRange.startContainer.textContent[currentRange.startOffset]));
   resultRange.setEnd(currentRange.endContainer, currentRange.endOffset);
@@ -85,7 +85,7 @@ const findBoundarySelection = (selection, boundary) => {
   selection.collapse(endContainer, endOffset);
   // Looking for maximum displacement
   while (selection.getRangeAt(0).compareBoundaryPoints(Range.START_TO_START, originalRange)===1) {
-    selection.modify("move", "backward", boundary);
+    selection.modify('move', 'backward', boundary);
   }
   // Going back to find minimum displacement
   while (selection.getRangeAt(0).compareBoundaryPoints(Range.START_TO_START, originalRange)<1) {
@@ -94,12 +94,12 @@ const findBoundarySelection = (selection, boundary) => {
       startContainer: currentRange.startContainer,
       startOffset: currentRange.startOffset,
     });
-    selection.modify("move", "forward", boundary);
+    selection.modify('move', 'forward', boundary);
   }
 
   selection.collapse(startContainer, startOffset);
   while (selection.getRangeAt(0).compareBoundaryPoints(Range.END_TO_END, originalRange)===-1) {
-    selection.modify("move", "forward", boundary);
+    selection.modify('move', 'forward', boundary);
   }
   while (selection.getRangeAt(0).compareBoundaryPoints(Range.END_TO_END, originalRange)>-1) {
     currentRange = selection.getRangeAt(0);
@@ -107,7 +107,7 @@ const findBoundarySelection = (selection, boundary) => {
       endContainer: currentRange.endContainer,
       endOffset: currentRange.endOffset,
     });
-    selection.modify("move", "backward", boundary);
+    selection.modify('move', 'backward', boundary);
   }
 
   selection.removeAllRanges();
@@ -134,11 +134,11 @@ const closestBoundarySelection = (selection, boundary) => {
 
   // It's easier to operate the selection when it's collapsed
   selection.collapse(startContainer, startOffset);
-  selection.modify("move", "forward", "character");
-  selection.modify("move", "backward", boundary);
+  selection.modify('move', 'forward', 'character');
+  selection.modify('move', 'backward', boundary);
   if (selection.getRangeAt(0).compareBoundaryPoints(Range.START_TO_START, originalRange)===1) {
     selection.collapse(startContainer, startOffset);
-    selection.modify("move", "backward", boundary);
+    selection.modify('move', 'backward', boundary);
   }
   currentRange = selection.getRangeAt(0);
   Object.assign(resultRange, {
@@ -147,11 +147,11 @@ const closestBoundarySelection = (selection, boundary) => {
   });
 
   selection.collapse(endContainer, endOffset);
-  selection.modify("move", "backward", "character");
-  selection.modify("move", "forward", boundary);
+  selection.modify('move', 'backward', 'character');
+  selection.modify('move', 'forward', boundary);
   if (selection.getRangeAt(0).compareBoundaryPoints(Range.START_TO_START, originalRange)===-1) {
     selection.collapse(endContainer, endOffset);
-    selection.modify("move", "forward", boundary);
+    selection.modify('move', 'forward', boundary);
   }
   currentRange = selection.getRangeAt(0);
   Object.assign(resultRange, {
@@ -170,7 +170,7 @@ const closestBoundarySelection = (selection, boundary) => {
 };
 
 const boundarySelection = (selection, boundary) => {
-  const wordBoundary = boundary !== "symbol";
+  const wordBoundary = boundary !== 'symbol';
   const {
     startOffset,
     startContainer,
@@ -183,7 +183,7 @@ const boundarySelection = (selection, boundary) => {
   } = destructSelection(selection);
 
   if (wordBoundary) {
-    if (boundary.endsWith("boundary")) {
+    if (boundary.endsWith('boundary')) {
       closestBoundarySelection(selection, boundary);
     } else {
       findBoundarySelection(selection, boundary);
@@ -193,14 +193,14 @@ const boundarySelection = (selection, boundary) => {
       const newRange = selection.getRangeAt(0);
 
       newRange.setEnd(startContainer, startOffset);
-      selection.modify("move", "backward", boundary);
+      selection.modify('move', 'backward', boundary);
     }
 
     if (!isText(lastSymbol) || isText(nextSymbol)) {
       const newRange = selection.getRangeAt(0);
 
       newRange.setEnd(endContainer, endOffset);
-      selection.modify("extend", "forward", boundary);
+      selection.modify('extend', 'forward', boundary);
     }
   }
 };
@@ -212,20 +212,21 @@ const boundarySelection = (selection, boundary) => {
 export const captureSelection = (
   callback,
   { granularity, beforeCleanup, window } = {
-    granularity: "symbol",
+    granularity: 'symbol',
   },
 ) => {
   const selection = window.getSelection();
 
   if (selection.isCollapsed) return;
-  if (granularity !== "symbol") {
+  if (granularity !== 'symbol') {
     trimSelection(selection);
   }
-  const selectionText = selection.toString().replace(/[\n\r]/g, "\\n");
 
   if (selection.isCollapsed) return;
 
   applyTextGranularity(selection, granularity);
+
+  const selectionText = selection.toString().replace(/[\n\r]/g, '\\n');
 
   for (let i = 0; i < selection.rangeCount; i++) {
     const range = fixRange(selection.getRangeAt(i));
@@ -247,26 +248,26 @@ export const captureSelection = (
  * @param {string} granularity
  */
 const applyTextGranularity = (selection, granularity) => {
-  if (!selection.modify || !granularity || granularity === "symbol") return;
+  if (!selection.modify || !granularity || granularity === 'symbol') return;
 
   try {
     switch (granularity) {
-      case "word":
-        boundarySelection(selection, "word");
+      case 'word':
+        boundarySelection(selection, 'word');
         return;
-      case "sentence":
-        boundarySelection(selection, "sentenceboundary");
+      case 'sentence':
+        boundarySelection(selection, 'sentenceboundary');
         return;
-      case "paragraph":
-        boundarySelection(selection, "paragraphboundary");
+      case 'paragraph':
+        boundarySelection(selection, 'paragraphboundary');
         return;
-      case "charater":
-      case "symbol":
+      case 'charater':
+      case 'symbol':
       default:
         return;
     }
   } catch {
-    console.warn("Probably, you're using browser that doesn't support granularity.");
+    console.warn('Probably, you\'re using browser that doesn\'t support granularity.');
   }
 };
 
@@ -275,14 +276,18 @@ const applyTextGranularity = (selection, granularity) => {
  * @param {HTMLElement} commonContainer
  * @param {HTMLElement} node
  * @param {number} offset
+ * @param {string} direction forward, backward, forward-next, backward-next
+ *                           "-next" when we need to skip node if it's a text node
  */
-const textNodeLookup = (commonContainer, node, offset, direction) => {
+const textNodeLookup = (commonContainer, node, offset, direction = 'forward') => {
   const startNode = node === commonContainer ? node.childNodes[offset] : node;
 
-  if (isTextNode(startNode)) return startNode;
+  if (isTextNode(startNode) && !direction.endsWith('next')) return startNode;
 
   const walker = commonContainer.ownerDocument.createTreeWalker(commonContainer, NodeFilter.SHOW_ALL);
   let currentNode = walker.nextNode();
+  // tree walker can't go backward, so we go forward to startNode and record every text node
+  // to find the last one before startNode
   let lastTextNode;
 
   while (currentNode && currentNode !== startNode) {
@@ -290,7 +295,9 @@ const textNodeLookup = (commonContainer, node, offset, direction) => {
     currentNode = walker.nextNode();
   }
 
-  if (currentNode && direction === "backward") return lastTextNode;
+  if (currentNode && direction.startsWith('backward')) return lastTextNode;
+
+  if (direction === 'forward-next') currentNode = walker.nextNode();
 
   while (currentNode) {
     if (isTextNode(currentNode)) return currentNode;
@@ -299,25 +306,49 @@ const textNodeLookup = (commonContainer, node, offset, direction) => {
 };
 
 /**
- * Fix range if it contains non-text nodes
+ * Fix range if it contains non-text nodes and shrink it down to the better fit.
+ * The main goal here is to get the most relevant xpath+offset combination.
+ * i.e. `start` should point to the element, containing first char, not parent,
+ * not root, not some previous element with `startOffset` on the last char.
  * @param {Range} range
  */
 const fixRange = range => {
-  const { startOffset, endOffset, commonAncestorContainer: commonContainer } = range;
-  let { startContainer, endContainer } = range;
+  const { endOffset, commonAncestorContainer: commonContainer } = range;
+  let { startOffset, startContainer, endContainer } = range;
 
   if (!isTextNode(startContainer)) {
-    startContainer = textNodeLookup(commonContainer, startContainer, startOffset, "forward");
+    startContainer = textNodeLookup(commonContainer, startContainer, startOffset, 'forward');
     if (!startContainer) return null;
     range.setStart(startContainer, 0);
+    startOffset = 0;
+  }
+
+  // if user started selection from the end of the tag, start could be this tag,
+  // so we should move it to more relevant one
+  const selectionFromTheEnd = startContainer.wholeText.length === startOffset;
+  // we skip ephemeral whitespace-only text nodes, like \n between tags in original html
+  const isBasicallyEmpty = textNode => /^\s*$/.test(textNode.wholeText);
+
+  if (selectionFromTheEnd || isBasicallyEmpty(startContainer)) {
+    do {
+      startContainer = textNodeLookup(commonContainer, startContainer, startOffset, 'forward-next');
+      if (!startContainer) return null;
+    } while (isBasicallyEmpty(startContainer));
+
+    range.setStart(startContainer, 0);
+    startOffset = 0;
   }
 
   if (!isTextNode(endContainer)) {
-    endContainer = textNodeLookup(commonContainer, endContainer, endOffset, "backward");
+    endContainer = textNodeLookup(commonContainer, endContainer, endOffset, 'backward');
     if (!endContainer) return null;
-    const isIncluded = !!range.toString().match(endContainer.wholeText)?.length;
 
-    range.setEnd(endContainer, isIncluded ? endContainer.length : 0);
+    while (/^\s*$/.test(endContainer.wholeText)) {
+      endContainer = textNodeLookup(commonContainer, endContainer, endOffset, 'backward-next');
+      if (!endContainer) return null;
+    }
+    // we skip empty whitespace-only text nodes, so we need the found one to be included
+    range.setEnd(endContainer, endContainer.length);
   }
 
   return range;
@@ -337,7 +368,7 @@ export const highlightRange = (range, { label, classNames }) => {
    * Wrapper with predefined classNames and cssStyles
    * @param  {[Node, number, number]} args
    */
-  const applyStyledHighlight = (...args) => highlightRangePart(...[...args, classNames]);
+  const applyStyledHighlight = (...args) => highlightRangePart(...args, classNames);
 
   // If start and end nodes are equal, we don't need
   // to perform any additional work, just highlighting as is
@@ -362,7 +393,7 @@ export const highlightRange = (range, { label, classNames }) => {
 
   const lastLabel = highlights[highlights.length - 1];
 
-  if (lastLabel) lastLabel.setAttribute("data-label", label ?? "");
+  if (lastLabel) lastLabel.setAttribute('data-label', label ?? '');
 
   return highlights;
 };
@@ -387,7 +418,7 @@ export const highlightRangePart = (container, startOffset, endOffset, classNames
    * to maintain proper nesting of highlight nodes
    */
   if (startOffset === 0 && container.length === endOffset && parent.classList.contains(classNames[0])) {
-    const placeholder = container.ownerDocument.createElement("span");
+    const placeholder = container.ownerDocument.createElement('span');
     const parentNode = parent.parentNode;
 
     parentNode.replaceChild(placeholder, parent);
@@ -434,7 +465,7 @@ export const highlightRangePart = (container, startOffset, endOffset, classNames
  * @param {string} [label]
  */
 export const wrapWithSpan = (node, classNames, label) => {
-  const highlight = node.ownerDocument.createElement("span");
+  const highlight = node.ownerDocument.createElement('span');
 
   highlight.appendChild(node);
 
@@ -450,13 +481,13 @@ export const wrapWithSpan = (node, classNames, label) => {
  */
 export const applySpanStyles = (spanNode, { classNames, label }) => {
   if (classNames) {
-    spanNode.className = "";
+    spanNode.className = '';
     spanNode.classList.add(...classNames);
   }
 
   // label is array, string or null, so check for length
-  if (!label?.length) spanNode.removeAttribute("data-label");
-  else spanNode.setAttribute("data-label", label);
+  if (!label?.length) spanNode.removeAttribute('data-label');
+  else spanNode.setAttribute('data-label', label);
 };
 
 /**
@@ -534,8 +565,8 @@ export const removeRange = spans => {
  */
 export const findRange = (start, end, root) => {
   return {
-    startContainer: codePointsToChars(findOnPosition(root, start, "right")),
-    endContainer: codePointsToChars(findOnPosition(root, end, "left")),
+    startContainer: codePointsToChars(findOnPosition(root, start, 'right')),
+    endContainer: codePointsToChars(findOnPosition(root, end, 'left')),
   };
 };
 
@@ -562,7 +593,7 @@ export const codePointsToChars = ({ node, position } = {}) => {
   if (!node) return;
 
   const codePoints = [...node.textContent].slice(0, position);
-  const chars = codePoints.join("").length;
+  const chars = codePoints.join('').length;
 
   return { node, position: chars };
 };
@@ -603,7 +634,7 @@ export const fixCodePointsInRange = (range) => {
  * @param {Node} root
  * @param {number} position
  */
-export const findOnPosition = (root, position, borderSide = "left") => {
+export const findOnPosition = (root, position, borderSide = 'left') => {
   const walker = (root.contentDocument ?? root.ownerDocument).createTreeWalker(root, NodeFilter.SHOW_ALL);
 
   let lastPosition = 0;
@@ -614,7 +645,7 @@ export const findOnPosition = (root, position, borderSide = "left") => {
 
   while (currentNode) {
     const isText = currentNode.nodeType === Node.TEXT_NODE;
-    const isBR = currentNode.nodeName === "BR";
+    const isBR = currentNode.nodeName === 'BR';
 
     if (isBR) {
       lastPosition++;
@@ -629,7 +660,7 @@ export const findOnPosition = (root, position, borderSide = "left") => {
       const length = [...currentNode.textContent].length;
 
       if (length + lastPosition >= position || !nextNode) {
-        if (borderSide === "right" && length + lastPosition === position && nextNode) {
+        if (borderSide === 'right' && length + lastPosition === position && nextNode) {
           finishHere = true;
         } else {
           return { node: currentNode, position: isBR ? 0 : clamp(position - lastPosition, 0, length) };
@@ -675,7 +706,7 @@ const findGlobalOffset = (node, position, root) => {
     nodeReached = nodeReached || (node === currentNode);
     const atTargetNode = node === currentNode || currentNode.contains(node);
     const isText = currentNode.nodeType === Node.TEXT_NODE;
-    const isBR = currentNode.nodeName === "BR";
+    const isBR = currentNode.nodeName === 'BR';
 
     // Stop iteration
     // Break if we passed target node and current node
@@ -685,7 +716,7 @@ const findGlobalOffset = (node, position, root) => {
     }
 
     if (isText || isBR) {
-      let length = currentNode.length ?? 1;
+      let length = isDefined(currentNode.length) ? [...currentNode.textContent].length : 1;
 
       if (atTargetNode) {
         length = Math.min(position, length);

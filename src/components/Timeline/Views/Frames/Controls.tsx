@@ -1,10 +1,10 @@
-import { FC, MouseEvent, useCallback, useContext, useMemo } from "react";
-import { IconInterpolationAdd, IconInterpolationRemove, IconKeypointAdd, IconKeypointDelete } from "../../../../assets/icons/timeline";
-import { TimelineContext } from "../../Context";
-import { ControlButton } from "../../Controls";
-import { TimelineExtraControls } from "../../Types";
+import { FC, MouseEvent, useCallback, useContext, useMemo } from 'react';
+import { IconInterpolationAdd, IconInterpolationRemove, IconKeypointAdd, IconKeypointDelete } from '../../../../assets/icons/timeline';
+import { TimelineContext } from '../../Context';
+import { ControlButton } from '../../Controls';
+import { TimelineExtraControls } from '../../Types';
 
-type Actions = "keypoint_add" | "keypoint_remove" | "lifespan_add" | "lifespan_remove"
+type Actions = 'keypoint_add' | 'keypoint_remove' | 'lifespan_add' | 'lifespan_remove'
 type DataType = {
   frame: number,
 }
@@ -65,11 +65,19 @@ export const Controls: FC<TimelineExtraControls<Actions, DataType>> = ({
 
   return (
     <>
-      <ControlButton onClick={onKeypointToggle} disabled={!hasSelectedRegion}>
+      <ControlButton
+        onClick={onKeypointToggle}
+        disabled={!hasSelectedRegion}
+        tooltip="Toggle Keypoint"
+      >
         {keypointIcon}
       </ControlButton>
 
-      <ControlButton onClick={onLifespanToggle} disabled={!closestKeypoint}>
+      <ControlButton
+        onClick={onLifespanToggle}
+        disabled={!closestKeypoint}
+        tooltip="Toggle Interpolation"
+      >
         {interpolationIcon}
       </ControlButton>
     </>

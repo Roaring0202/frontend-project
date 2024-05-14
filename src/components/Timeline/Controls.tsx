@@ -1,86 +1,144 @@
-import React, { FC, MouseEvent, MutableRefObject, useContext, useEffect, useMemo, useRef, useState } from "react";
-import { IconBackward, IconChevronLeft, IconChevronRight, IconCollapse, IconExpand, IconFastForward, IconForward, IconFullscreen, IconFullscreenExit, IconNext, IconPause, IconPlay, IconPrev, IconRewind } from "../../assets/icons/timeline";
-import { Button, ButtonProps } from "../../common/Button/Button";
-import { Space } from "../../common/Space/Space";
-import { Block, Elem } from "../../utils/bem";
-import { clamp, isMacOS } from "../../utils/utilities";
-import { TimelineContext } from "./Context";
-import "./Controls.styl";
-import { TimelineStepFunction } from "./Types";
+import React, { FC, memo, MouseEvent, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import {
+  IconBackward,
+  IconChevronLeft,
+  IconChevronRight,
+  IconCollapse,
+  IconExpand,
+  IconFastForward,
+  IconForward,
+  IconFullscreen,
+  IconFullscreenExit,
+  IconNext,
+  IconPause,
+  IconPlay,
+  IconPrev,
+  IconRewind
+} from '../../assets/icons/timeline';
+import { Button, ButtonProps } from '../../common/Button/Button';
+import { Space } from '../../common/Space/Space';
+import { Block, Elem } from '../../utils/bem';
+import { isDefined } from '../../utils/utilities';
+import { TimelineContext } from './Context';
+import './Controls.styl';
+import * as SideControls from './SideControls';
+import { TimelineControlsFormatterOptions, TimelineControlsProps, TimelineControlsStepHandler, TimelineCustomControls, TimelineProps, TimelineStepFunction } from './Types';
+import { FF_DEV_2715, isFF } from '../../utils/feature-flags';
+import { AudioControl } from './Controls/AudioControl';
+import { ConfigControl } from './Controls/ConfigControl';
+import { TimeDurationControl } from '../TimeDurationControl/TimeDurationControl';
 
-const relativePosition = (pos: number, fps: number) => {
-  const roundedFps = Math.floor(fps);
-  const value = Math.floor(pos % roundedFps);
-  const result = Math.floor(value > 0 ? value : roundedFps);
+const positionFromTime = ({ time, fps }: TimelineControlsFormatterOptions) => {
+  const roundedFps = Math.round(fps).toString();
+  const fpsMs = 1000 / fps;
+  const currentSecond = (time * 1000) % 1000;
+  const result = Math.round(currentSecond / fpsMs).toString();
 
-  return result.toString().padStart(roundedFps.toString().length, '0');
+  return result.padStart(roundedFps.length, '0');
 };
 
-export type ControlsStepHandler = (
-  e?: MouseEvent<HTMLButtonElement>,
-  stepSize?: TimelineStepFunction
-) => void;
-
-export interface ControlsProps {
-  length: number;
-  position: number;
-  frameRate: number;
-  playing: boolean;
-  collapsed: boolean;
-  fullscreen: boolean;
-  disableFrames?: boolean;
-  extraControls?: JSX.Element | null;
-  onRewind: () => void;
-  onForward: () => void;
-  onPlayToggle: (playing: boolean) => void;
-  onFullScreenToggle: (fullscreen: boolean) => void;
-  onStepBackward: ControlsStepHandler;
-  onStepForward: ControlsStepHandler;
-  onPositionChange: (position: number) => void;
-  onToggleCollapsed: (collapsed: boolean) => void;
-}
-
-export const Controls: FC<ControlsProps> = ({
-  length,
+export const Controls: FC<TimelineControlsProps> = memo(({
+  length = 1000,
   position,
-  frameRate,
+  frameRate = 1024,
   playing,
   collapsed,
+  duration,
   extraControls,
   fullscreen,
+  altHopSize,
   disableFrames,
+  allowFullscreen,
+  allowViewCollapse,
   onRewind,
   onForward,
-  onPlayToggle,
+  onPlay,
+  onPause,
   onFullScreenToggle,
   onStepBackward,
   onPositionChange,
   onStepForward,
+  onSpeedChange,
   onToggleCollapsed,
+  formatPosition,
+  toggleVisibility,
+  layerVisibility,
+  mediaType,
+  ...props
 }) => {
   const { settings } = useContext(TimelineContext);
   const [altControlsMode, setAltControlsMode] = useState(false);
-  const [inputMode, setInputMode] = useState(false);
+  const [configModal, setConfigModal] = useState(false);
+  const [audioModal, setAudioModal] = useState(false);
   const [startReached, endReached] = [position === 1, position === length];
 
-  const time = useMemo(() => {
-    return length / frameRate;
+  const durationFormatted = useMemo(() => {
+    return Math.max((length - 1) / frameRate, 0);
   }, [length, frameRate]);
 
   const currentTime = useMemo(() => {
-    return position / frameRate;
+    return (position - 1) / frameRate;
   }, [position, frameRate]);
 
-  const stepHandlerWrapper = (handler: ControlsStepHandler, stepSize?: TimelineStepFunction) => (e: MouseEvent<HTMLButtonElement>) => {
+  const customControls = useCustomControls(props.customControls);
+  const stepHandlerWrapper = (handler: TimelineControlsStepHandler, stepSize?: TimelineStepFunction) => (e: MouseEvent<HTMLButtonElement>) => {
     handler(e, stepSize ?? undefined);
+  };
+
+  const handlePlay = useCallback(() => {
+    playing ? onPause?.() : onPlay?.();
+  }, [playing, onPlay, onPause]);
+
+  const onSetVolumeModal = (e: MouseEvent<HTMLButtonElement>) => {
+    e.stopPropagation();
+    if (configModal) setConfigModal(false);
+
+    setAudioModal(!audioModal);
+  };
+
+  const onSetConfigModal = (e: MouseEvent<HTMLButtonElement>) => {
+    e.stopPropagation();
+
+    if (audioModal) setAudioModal(false);
+
+    setConfigModal(!configModal);
+  };
+
+  const renderControls = () => {
+    return (
+      <Elem name="group" tag={Space} size="small" style={{ gridAutoColumns: 'auto' }}>
+        <ConfigControl
+          onSetModal={onSetConfigModal}
+          onAmpChange={props.onAmpChange}
+          configModal={configModal}
+          onSpeedChange={(speed: number) => onSpeedChange?.(speed)}
+          speed={props.speed || 0}
+          amp={props.amp || 0}
+          toggleVisibility={toggleVisibility}
+          layerVisibility={layerVisibility}
+        />
+        <AudioControl
+          volume={props.volume || 0}
+          onVolumeChange={props.onVolumeChange}
+          onSetModal={onSetVolumeModal}
+          audioModal={audioModal}
+        />
+
+      </Elem>
+    );
+  };
+
+  const closeModalHandler = () => {
+    setConfigModal(false);
+    setAudioModal(false);
   };
 
   useEffect(() => {
     const keyboardHandler = (e: KeyboardEvent) => {
       if (!settings?.stepSize) return;
-      const altMode = e.key === "Shift";
+      const altMode = e.key === 'Shift';
 
-      if (e.type === 'keydown' && altMode) {
+      if (e.type === 'keydown' && altMode && !altControlsMode) {
         setAltControlsMode(true);
       } else if (e.type === 'keyup' && altMode && altControlsMode) {
         setAltControlsMode(false);
@@ -89,39 +147,48 @@ export const Controls: FC<ControlsProps> = ({
 
     document.addEventListener('keydown', keyboardHandler);
     document.addEventListener('keyup', keyboardHandler);
+    document.addEventListener('click', closeModalHandler);
 
     return () => {
       document.removeEventListener('keydown', keyboardHandler);
       document.removeEventListener('keyup', keyboardHandler);
+      document.removeEventListener('click', closeModalHandler);
     };
   }, [altControlsMode]);
 
-  return (
-    <Block name="timeline-controls" tag={Space} spread>
-      <Elem name="group" tag={Space} size="small">
-        <Elem name="counter" onClick={() => setInputMode(true)}>
-          {inputMode ? (
-            <FrameInput
-              length={length}
-              position={position}
-              onChange={(value) => {
-                onPositionChange?.(value);
-              }}
-              onFinishEditing={() => {
-                setInputMode(false);
-              }}
-            />
-          ) : (
-            <>{position} <span>of {length}</span></>
-          )}
-        </Elem>
-      </Elem>
+  const onTimeUpdateChange = (value: number) => {
+    onPositionChange(value);
+  };
 
+  return (
+    <Block name="timeline-controls" tag={Space} spread style={{ gridAutoColumns: 'auto' }}>
+      {isFF(FF_DEV_2715) && mediaType === 'audio' ? renderControls() : (
+        <Elem name="group" tag={Space} size="small" style={{ gridAutoColumns: 'auto' }}>
+          {props.controls && Object.entries(props.controls).map(([name, enabled]) => {
+            if (enabled === false) return;
+
+            const Component = SideControls[name as keyof typeof SideControls];
+
+            return isDefined(Component) && (
+              <Component
+                key={name}
+                length={length}
+                position={position - 1}
+                volume={props.volume}
+                onPositionChange={onPositionChange}
+                onVolumeChange={props.onVolumeChange}
+              />
+            );
+          })}
+          {customControls?.left}
+        </Elem>
+      )}
       <Elem name="main-controls">
         <Elem name="group" tag={Space} collapsed>
           {extraControls}
         </Elem>
         <Elem name="group" tag={Space} collapsed>
+          {customControls?.leftCenter}
           <AltControls
             showAlterantive={altControlsMode && !disableFrames}
             main={(
@@ -149,19 +216,21 @@ export const Controls: FC<ControlsProps> = ({
                 <ControlButton
                   onClick={() => onRewind?.()}
                   disabled={startReached}
+                  hotkey={settings?.skipToBeginning}
                 >
                   <IconRewind/>
                 </ControlButton>
                 <ControlButton
-                  onClick={() => onRewind?.()}
+                  onClick={() => onRewind?.(altHopSize)}
                   disabled={startReached}
+                  hotkey={settings?.hopBackward}
                 >
                   <IconBackward/>
                 </ControlButton>
               </>
             )}
           />
-          <ControlButton onClick={() => onPlayToggle?.(!playing)} hotkey={settings?.playpauseHotkey}>
+          <ControlButton onClick={handlePlay} hotkey={settings?.playpauseHotkey}>
             {playing ? <IconPause/> : <IconPlay/>}
           </ControlButton>
           <AltControls
@@ -189,50 +258,80 @@ export const Controls: FC<ControlsProps> = ({
             alt={(
               <>
                 <ControlButton
-                  onClick={() => onForward?.()}
+                  onClick={() => onForward?.(altHopSize)}
                   disabled={endReached}
+                  hotkey={settings?.hopForward}
                 >
                   <IconForward/>
                 </ControlButton>
                 <ControlButton
                   onClick={() => onForward?.()}
                   disabled={endReached}
+                  hotkey={settings?.skipToEnd}
                 >
                   <IconFastForward/>
                 </ControlButton>
               </>
             )}
           />
+          {customControls?.rightCenter}
         </Elem>
         <Elem name="group" tag={Space} collapsed>
-          {!disableFrames && (
-            <ControlButton onClick={() => onToggleCollapsed?.(!collapsed)}>{collapsed ? <IconExpand/> : <IconCollapse/>}</ControlButton>
+          {!disableFrames && allowViewCollapse && (
+            <ControlButton
+              tooltip="Toggle Timeline"
+              onClick={() => onToggleCollapsed?.(!collapsed)}
+            >
+              {collapsed ? <IconExpand/> : <IconCollapse/>}
+            </ControlButton>
           )}
-          <ControlButton onClick={() => onFullScreenToggle?.(false)}>
-            {fullscreen ? (
-              <IconFullscreenExit/>
-            ) : (
-              <IconFullscreen/>
-            )}
-          </ControlButton>
+          {allowFullscreen && (
+            <ControlButton
+              tooltip="Fullscreen"
+              onClick={() => onFullScreenToggle?.(false)}
+            >
+              {fullscreen ? (
+                <IconFullscreenExit/>
+              ) : (
+                <IconFullscreen/>
+              )}
+            </ControlButton>
+          )}
         </Elem>
       </Elem>
 
       <Elem name="group" tag={Space} size="small">
+        {isFF(FF_DEV_2715) && mediaType === 'audio' ? (
+          <>
+            {customControls?.right}
+            <TimeDurationControl
+              startTime={0}
+              endTime={duration}
+              minTime={0}
+              maxTime={duration}
+              endTimeReadonly={true}
+              currentTime={position}
+              onChangeStartTime={onTimeUpdateChange}
+            />
+          </>
+        ) : (
+          <>
+            {customControls?.right}
+            <TimeDisplay
+              currentTime={currentTime}
+              duration={durationFormatted}
+              length={length}
+              position={position}
+              framerate={frameRate}
+              formatPosition={formatPosition}
+            />
 
-        <Elem name="time">
-          <Time
-            time={currentTime}
-            position={relativePosition(position, frameRate)}
-          />/<Time
-            time={time}
-            position={relativePosition(length, frameRate)}
-          />
-        </Elem>
+          </>
+        )}
       </Elem>
     </Block>
   );
-};
+});
 
 export const ControlButton: FC<ButtonProps & {disabled?: boolean}> = ({ children, ...props }) => {
   return (
@@ -246,6 +345,41 @@ export const ControlButton: FC<ButtonProps & {disabled?: boolean}> = ({ children
   );
 };
 
+interface TimeDisplay {
+  currentTime: number;
+  position: number;
+  duration: number;
+  framerate: number;
+  length: number;
+  formatPosition?: TimelineProps['formatPosition'];
+}
+
+const TimeDisplay: FC<TimeDisplay> = ({
+  currentTime,
+  position,
+  duration,
+  framerate,
+  length,
+  formatPosition,
+}) => {
+  const pos = position - 1;
+  const formatter = formatPosition ?? positionFromTime;
+  const commonOptions = { position: pos, fps: framerate, length };
+  const currentTimeFormatted = formatter({ time: currentTime, ...commonOptions });
+  const totalTimeFormatted = formatter({ time: duration, ...commonOptions });
+
+  return (
+    <Elem name="time">
+      <Elem name="time-section">
+        <Time time={currentTime} position={currentTimeFormatted}/>
+      </Elem>
+      <Elem name="time-section">
+        <Time time={Math.max(duration, 0)} position={totalTimeFormatted}/>
+      </Elem>
+    </Elem>
+  );
+};
+
 const Time: FC<{time: number, position: string}> = ({ time, position }) => {
   const timeDate = new Date(time * 1000).toISOString();
   const formatted = time > 3600
@@ -253,9 +387,9 @@ const Time: FC<{time: number, position: string}> = ({ time, position }) => {
     : timeDate.substr(14, 5);
 
   return (
-    <Block name="timeline-time">
+    <>
       {formatted}{position ? <span>{position}</span> : null}
-    </Block>
+    </>
   );
 };
 
@@ -271,56 +405,22 @@ const AltControls: FC<AltControlsProps> = (props) => {
   return props.showAlterantive ? props.alt : props.main;
 };
 
-const allowedKeys = [
-  'ArrowUp',
-  'ArrowDown',
-  'Backspace',
-  'Delete',
-  'Enter',
-  /[0-9]/,
-];
+type ControlGroups = Record<TimelineCustomControls['position'], JSX.Element[]>;
 
-const FrameInput: FC<{
-  position: number,
-  length: number,
-  onChange: (value: number) => void,
-  onFinishEditing: () => void,
-}> = ({ length, position, onChange, onFinishEditing }) => {
-  const input = useRef<HTMLInputElement>() as MutableRefObject<HTMLInputElement>;
+const useCustomControls = (
+  customControls?: TimelineCustomControls[],
+): ControlGroups | null => {
+  if (!customControls) return null;
 
-  const notifyChange = (value: number) => {
-    onChange?.(clamp(value, 1, length));
-  };
+  const groups = customControls?.reduce<ControlGroups>((groups, item) => {
+    const group = groups[item.position] ?? [];
+    const component = item.component instanceof Function ? item.component() : item.component;
 
-  return (
-    <input
-      type="text"
-      ref={input}
-      defaultValue={position}
-      autoFocus
-      onFocus={() => input.current?.select()}
-      onKeyDown={(e) => {
-        const allowedKey = allowedKeys.find(k => (k instanceof RegExp) ? k.test(e.key) : k === e.key );
+    group.push(component);
+    groups[item.position] = group;
 
-        if (!allowedKey && !e.metaKey) e.preventDefault();
+    return groups;
+  }, {} as ControlGroups);
 
-        const value = parseInt(input.current!.value);
-        const step = e.shiftKey ? 10 : 1;
-
-        if (e.key === 'Enter') {
-          notifyChange?.(value);
-          onFinishEditing?.();
-        } else if (e.key === 'Escape') {
-          onFinishEditing?.();
-        } else if (allowedKey === 'ArrowUp') {
-          input.current!.value = (clamp(value + step, 1, length)).toString();
-          e.preventDefault();
-        } else if (allowedKey === 'ArrowDown') {
-          input.current!.value = (clamp(value - step, 1, length)).toString();
-          e.preventDefault();
-        }
-      }}
-      onBlur={() => onFinishEditing?.()}
-    />
-  );
+  return groups;
 };
