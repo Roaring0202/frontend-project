@@ -21,7 +21,6 @@ const SideTabsPanelsComponent: FC<SidePanelsProps> = ({
   showComments,
   focusTab,
 }) => {
-  
   const snapThreshold = 5;
   const regions = currentEntity.regionStore;
   const viewportSize = useRef<ViewportSize>({ width: 0, height: 0 });
@@ -33,8 +32,9 @@ const SideTabsPanelsComponent: FC<SidePanelsProps> = ({
   const [initialized, setInitialized] = useState(false);
   const rootRef = useRef<HTMLDivElement>();
   const [snap, setSnap] = useState<DropSide | Side | undefined>();
-  const [panelData, setPanelData] = useState<Record<string, PanelBBox>>(restorePanel(showComments).panelData);
-  const [collapsedSide, setCollapsedSide] = useState(restorePanel(showComments).collapsedSide);
+  const initialState = useMemo(() => restorePanel(showComments), [showComments]);
+  const [panelData, setPanelData] = useState<Record<string, PanelBBox>>(initialState.panelData);
+  const [collapsedSide, setCollapsedSide] = useState(initialState.collapsedSide);
   const [breakPointActiveTab, setBreakPointActiveTab] = useState(0);
   const localSnap = useRef(snap);
   const collapsedSideRef = useRef(collapsedSide);
@@ -248,7 +248,7 @@ const SideTabsPanelsComponent: FC<SidePanelsProps> = ({
           storedTop: undefined,
           maxHeight,
           width: clamp(w, DEFAULT_PANEL_WIDTH, panelMaxWidth),
-          height: panelData[panelKey].detached? clamp(h, DEFAULT_PANEL_HEIGHT, DEFAULT_PANEL_MAX_HEIGHT) : panelData[panelKey].height,
+          height: panelData[panelKey].detached ? clamp(h, DEFAULT_PANEL_HEIGHT, DEFAULT_PANEL_MAX_HEIGHT) : panelData[panelKey].height,
         });
       });
     });
@@ -321,8 +321,8 @@ const SideTabsPanelsComponent: FC<SidePanelsProps> = ({
     const panelRightWidth = rightKeys.length && panelData[rightKeys[0]].width || 0;
     const visibilityLeft = allLeftNotVisible ? 0 : panelLeftWidth;
     const visibilityRight = allRightNotVisible ? 0 : panelRightWidth;
-    const paddingLeft = panelBreakPoint || panelsHidden ? 0 : leftCollapsed ?  PANEL_HEADER_HEIGHT : visibilityLeft ;
-    const paddingRight = panelBreakPoint || panelsHidden ? 0 :  rightCollapsed ? PANEL_HEADER_HEIGHT : visibilityRight;
+    const paddingLeft = panelBreakPoint || panelsHidden ? 0 : leftCollapsed ? PANEL_HEADER_HEIGHT : visibilityLeft ;
+    const paddingRight = panelBreakPoint || panelsHidden ? 0 : rightCollapsed ? PANEL_HEADER_HEIGHT : visibilityRight;
 
     return ({
       paddingLeft,
@@ -346,7 +346,7 @@ const SideTabsPanelsComponent: FC<SidePanelsProps> = ({
 
     const panels = Object.entries(panelData);
 
-    for(const [name, panelDatum] of panels) {
+    for (const [name, panelDatum] of panels) {
       const { alignment, detached } = panelDatum;
       const attachedKeys = getAttachedPerSide(panelData, alignment);
 
@@ -410,7 +410,7 @@ const SideTabsPanelsComponent: FC<SidePanelsProps> = ({
       // we don't need to check or resize anything in collapsed state
       if (clientWidth <= maxWindowWidth) return;
 
-      if(viewportSize.current.height !== clientHeight) setPanelData(getSnappedHeights(panelData, clientHeight));
+      if (viewportSize.current.height !== clientHeight) setPanelData(getSnappedHeights(panelData, clientHeight));
       // Remember current width and height of the viewport
       viewportSize.current.width = clientWidth ?? 0;
       viewportSize.current.height = clientHeight ?? 0;
@@ -445,7 +445,7 @@ const SideTabsPanelsComponent: FC<SidePanelsProps> = ({
     return updatedProps;
   }, [partialEmptyBaseProps, showComments]);
 
-  const emptyBaseProps = { ...getPartialEmptyBaseProps,  ...commonProps, breakPointActiveTab, setBreakPointActiveTab };
+  const emptyBaseProps = { ...getPartialEmptyBaseProps, ...commonProps, breakPointActiveTab, setBreakPointActiveTab };
 
   return (
     <SidePanelsContext.Provider value={contextValue}>
@@ -474,7 +474,7 @@ const SideTabsPanelsComponent: FC<SidePanelsProps> = ({
                     </PanelTabsBase>
                   </Elem>
                 </>
-              ):(
+              ) : (
                 <>
                   {Object.entries(panels).map(([panelType, panels], iterator) => {
                     const content = panels.sort((a, b) => a.order - b.order).map((baseProps, index) => {

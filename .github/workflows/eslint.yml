@@ -12,6 +12,11 @@ env:
   CACHE_NAME_PREFIX: v3
   NODE: '18'
 
+permissions:
+  checks: write
+  contents: read
+  pull-requests: write
+
 jobs:
   run:
     name: Run ESLint
@@ -19,16 +24,16 @@ jobs:
     # ci can be skipped with `[skip ci]` prefix in message
     if: "!contains(github.event.head_commit.message, 'skip ci')"
     steps:
-      - uses: hmarr/debug-action@v2.1.0
+      - uses: hmarr/debug-action@v3.0.0
 
       - name: "Checkout codebase"
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           ref: ${{ inputs.sha }}
 
       - name: "Setup NodeJS"
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
           node-version: "${{ env.NODE }}"
 
@@ -40,7 +45,7 @@ jobs:
         run: echo "dir=$(yarn cache dir)" >> $GITHUB_OUTPUT
 
       - name: Configure yarn cache
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: ${{ steps.yarn-cache-dir-path.outputs.dir }}
           key: ${{ env.CACHE_NAME_PREFIX }}-${{ runner.os }}-node-${{ env.NODE }}-${{ hashFiles('**/yarn.lock') }}
@@ -52,8 +57,14 @@ jobs:
           set -euo pipefail
           yarn install --frozen-lockfile
 
+      - name: "[DEBUG] Print installed npm packages"
+        run: |
+          npm list --depth=1 || true
+
       - name: Run ESLint
-        uses: tj-actions/eslint-changed-files@v19
+        uses: tj-actions/eslint-changed-files@v23
+        env:
+          REVIEWDOG_GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           config_path: ".eslintrc.js"
           ignore_path: ".eslintignore"

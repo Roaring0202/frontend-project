@@ -69,7 +69,7 @@ export const PanelTabsBase: FC<BaseProps> = ({
       width: locked ? '100%' : (!collapsed ? width ?? '100%' : PANEL_HEADER_HEIGHT),
     } : {
       width: collapsed ? '100%' : width ?? DEFAULT_PANEL_WIDTH,
-      height: collapsed ? '100%' :  PANEL_HEADER_HEIGHT,
+      height: collapsed ? '100%' : PANEL_HEADER_HEIGHT,
     };
 
     return {
@@ -161,7 +161,7 @@ export const PanelTabsBase: FC<BaseProps> = ({
       const target = e.target as HTMLElement;
       const type = target.dataset.resize;
       const shift = (() => {
-        switch(type) {
+        switch (type) {
           case 'top-left':
             return 'top-left';
           case 'top':
@@ -202,7 +202,7 @@ export const PanelTabsBase: FC<BaseProps> = ({
         const left = shiftLeft ? (l + (w - width)) : l;
         const { current: key } = keyRef;
 
-        handlers.current.onResize( key, width, height, top, left);
+        handlers.current.onResize(key, width, height, top, left);
       }
     },
     onMouseUp() {
@@ -257,7 +257,7 @@ export const PanelTabsBase: FC<BaseProps> = ({
             {isChildOfGroup && visible && <Elem name="grouped-top" ref={resizeGroup} mod={{ drag: 'grouped-top' === resizing }} data-resize={'grouped-top'} />}
             <Elem ref={headerRef} onClick={() => { if (collapsed) handleGroupPanelToggle(); }} id={key} mod={{ collapsed }} name="header">
               <Elem name="header-left">
-                {!collapsed && <Elem name="icon" style={{ pointerEvents: 'none' }} tag={IconOutlinerDrag} width={20} />}
+                {!collapsed && <Elem name="icon" style={{ pointerEvents: 'none' }} tag={IconOutlinerDrag} width={8} />}
                 {!visible && !collapsed && <Elem name="title">{panelViews.map(view => view.title).join(' ')}</Elem>}
               </Elem>
               <Elem name="header-right" >

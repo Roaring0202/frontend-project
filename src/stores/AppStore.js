@@ -1,6 +1,15 @@
 /* global LSF_VERSION */
 
-import { destroy, detach, flow, getEnv, getSnapshot, types } from 'mobx-state-tree';
+import {
+  destroy,
+  detach,
+  flow,
+  getEnv, getParent,
+  getSnapshot,
+  isRoot,
+  types,
+  walk
+} from 'mobx-state-tree';
 
 import uniqBy from 'lodash/uniqBy';
 import InfoModal from '../components/Infomodal/Infomodal';
@@ -8,20 +17,18 @@ import { Hotkey } from '../core/Hotkey';
 import ToolsManager from '../tools/Manager';
 import Utils from '../utils';
 import { guidGenerator } from '../utils/unique';
-import { delay, isDefined } from '../utils/utilities';
+import { clamp, delay, isDefined } from '../utils/utilities';
 import AnnotationStore from './Annotation/store';
 import Project from './ProjectStore';
 import Settings from './SettingsStore';
 import Task from './TaskStore';
 import { UserExtended } from './UserStore';
 import { UserLabels } from './UserLabels';
-import { FF_DEV_1536, FF_DEV_2715, FF_LSDV_4998, isFF } from '../utils/feature-flags';
+import { FF_DEV_1536, FF_LSDV_4620_3_ML, FF_LSDV_4998, FF_SIMPLE_INIT, isFF } from '../utils/feature-flags';
 import { CommentStore } from './Comment/CommentStore';
 import { destroy as destroySharedStore } from '../mixins/SharedChoiceStore/mixin';
 
 const hotkeys = Hotkey('AppStore', 'Global Hotkeys');
-
-const isFFDev2715 = isFF(FF_DEV_2715);
 
 export default types
   .model('AppStore', {
@@ -145,6 +152,10 @@ export default types
     users: types.optional(types.array(UserExtended), []),
 
     userLabels: isFF(FF_DEV_1536) ? types.optional(UserLabels, { controls: {} }) : types.undefined,
+
+    queueTotal: types.optional(types.number, 0),
+
+    queuePosition: types.optional(types.number, 0),
   })
   .preProcessSnapshot((sn) => {
     // This should only be handled if the sn.user value is an object, and converted to a reference id for other
@@ -174,15 +185,13 @@ export default types
     initialized: false,
     hydrated: false,
     suggestionsRequest: null,
+    // @todo should be removed along with the FF; it's used to detect FF in other parts
+    simpleInit: isFF(FF_SIMPLE_INIT),
   }))
   .views(self => ({
-    /**
-     * Get alert
-     */
-    get alert() {
-      return getEnv(self).alert;
+    get events() {
+      return getEnv(self).events;
     },
-
     get hasSegmentation() {
       // not an object and not a classification
       const isSegmentation = t => !t.getAvailableStates && !t.perRegionVisible;
@@ -223,6 +232,19 @@ export default types
     },
   }))
   .actions(self => {
+    let appControls;
+
+    function setAppControls(controls) {
+      appControls = controls;
+    }
+
+    function clearApp() {
+      appControls?.clear();
+    }
+
+    function renderApp() {
+      appControls?.render();
+    }
     /**
      * Update settings display state
      */
@@ -310,6 +332,7 @@ export default types
 
           const entity = annotationStore.selected;
 
+          entity?.submissionInProgress();
 
           if (self.hasInterface('review')) {
             self.acceptAnnotation();
@@ -327,6 +350,10 @@ export default types
       if (self.hasInterface('skip', 'review')) {
         hotkeys.addNamed('annotation:skip', () => {
           if (self.annotationStore.viewingAll) return;
+
+          const entity = self.annotationStore.selected;
+
+          entity?.submissionInProgress();
 
           if (self.hasInterface('review')) {
             self.rejectAnnotation();
@@ -508,6 +535,9 @@ export default types
         })
         .then(() => self.setFlags({ isSubmitting: false }));
     }
+    function incrementQueuePosition(number = 1) {
+      self.queuePosition = clamp(self.queuePosition + number, 1, self.queueTotal);
+    }
 
     function submitAnnotation() {
       if (self.isSubmitting) return;
@@ -522,6 +552,7 @@ export default types
       entity.sendUserGenerate();
       handleSubmittingFlag(async () => {
         await getEnv(self).events.invoke(event, self, entity);
+        self.incrementQueuePosition();
       });
       entity.dropDraft();
     }
@@ -537,6 +568,7 @@ export default types
 
       handleSubmittingFlag(async () => {
         await getEnv(self).events.invoke('updateAnnotation', self, entity, extraData);
+        self.incrementQueuePosition();
       });
       entity.dropDraft();
       !entity.sentUserGenerate && entity.sendUserGenerate();
@@ -546,6 +578,7 @@ export default types
       if (self.isSubmitting) return;
       handleSubmittingFlag(() => {
         getEnv(self).events.invoke('skipTask', self, extraData);
+        self.incrementQueuePosition();
       }, 'Error during skip, try again');
     }
 
@@ -569,6 +602,7 @@ export default types
 
         entity.dropDraft();
         await getEnv(self).events.invoke('acceptAnnotation', self, { isDirty, entity });
+        self.incrementQueuePosition();
       }, 'Error during accept, try again');
     }
 
@@ -585,7 +619,21 @@ export default types
 
         entity.dropDraft();
         await getEnv(self).events.invoke('rejectAnnotation', self, { isDirty, entity, comment });
+        self.incrementQueuePosition(-1);
+
       }, 'Error during reject, try again');
+    }
+
+    /**
+     * Exchange storage url for presigned url for task
+     */
+    async function presignUrlForProject(url) {
+      // Event invocation returns array of results for all handlers.
+      const urls = await self.events.invoke('presignUrlForProject', self, url);
+
+      const presignUrl = urls?.[0];
+
+      return presignUrl;
     }
 
     /**
@@ -624,50 +672,91 @@ export default types
     }
 
     /**
-     * Function to initilaze annotation store
+     * Function to initialize annotation store
      * Given annotations and predictions
      * `completions` is a fallback for old projects; they'll be saved as `annotations` anyway
      */
-    function initializeStore({ hydrated, annotations, completions, predictions, annotationHistory }) {
+    function initializeStore({ annotations = [], completions = [], predictions = [], annotationHistory }) {
       const as = self.annotationStore;
 
+      // some hacks to properly clear react and mobx structures
       as.afterReset?.();
 
       if (!as.initialized) {
         as.initRoot(self.config);
+        if (isFF(FF_LSDV_4620_3_ML) && !appControls?.isRendered()) {
+          appControls?.render();
+        }
       }
 
-      // Allow tags to decide whether to load individual data (audio, video, etc)
-      // based on the task+annotation being hydrated
-      if (isFFDev2715) {
-        self.setHydrated(hydrated);
+      // goal here is to deserialize everything fast and select only first annotation
+      // no extra processes during eserialization and further processes triggered during select
+      if (self.simpleInit) {
+        window.STORE_INIT_OK = false;
+
+        // add predictions and annotations to the store;
+        // `hidden` will stop them from calling any rendering helpers;
+        // correct annotation will be selected at the end and everything will be called inside.
+        predictions.forEach(p => {
+          const obj = as.addPrediction(p);
+          const results = p.result.map(r => ({ ...r, origin: 'prediction' }));
+
+          obj.deserializeResults(results, { hidden: true });
+        });
+
+        [...completions, ...annotations].forEach((c) => {
+          const obj = as.addAnnotation(c);
+
+          obj.deserializeResults(c.draft || c.result, { hidden: true });
+        });
+
+        window.STORE_INIT_OK = true;
+        // simple logging to detect if simple init is used on users' machines
+        console.log('LSF: deserialization is finished');
+
+        // next line might be unclear after removing FF_SIMPLE_INIT
+        // reversing the list caused problems before when task is reloaded and list is reversed again.
+        // AnnotationsCarousel has its own ordering anyway, so we just keep technical order
+        // as simple as possible.
+        const current = as.annotations.at(-1);
+        const currentPrediction = !current && as.predictions.at(-1);
+
+        if (current) {
+          as.selectAnnotation(current.id);
+          // looks like we still need it anyway, but it's fast and harmless,
+          // and we only call it once on already visible annotation
+          current.reinitHistory();
+        } else if (currentPrediction) {
+          as.selectPrediction(currentPrediction.id);
+        }
+
+        // annotation history is set when annotation is selected,
+        // so no need to set it here
+      } else {
+        (predictions ?? []).forEach(p => {
+          const obj = as.addPrediction(p);
+
+          as.selectPrediction(obj.id);
+          obj.deserializeResults(p.result.map(r => ({
+            ...r,
+            origin: 'prediction',
+          })));
+        });
+
+        [...(completions ?? []), ...(annotations ?? [])]?.forEach((c) => {
+          const obj = as.addAnnotation(c);
+
+          as.selectAnnotation(obj.id);
+          obj.deserializeResults(c.draft || c.result);
+          obj.reinitHistory();
+        });
+
+        const current = as.annotations.at(-1);
+
+        if (current) current.setInitialValues();
+
+        self.setHistory(annotationHistory);
       }
-
-      // eslint breaks on some optional chaining https://github.com/eslint/eslint/issues/12822
-      /* eslint-disable no-unused-expressions */
-      (predictions ?? []).forEach(p => {
-        const obj = as.addPrediction(p);
-
-        as.selectPrediction(obj.id);
-        obj.deserializeResults(p.result.map(r => ({
-          ...r,
-          origin: 'prediction',
-        })));
-      });
-
-      [...(completions ?? []), ...(annotations ?? [])]?.forEach((c) => {
-        const obj = as.addAnnotation(c);
-
-        as.selectAnnotation(obj.id);
-        obj.deserializeResults(c.draft || c.result);
-        obj.reinitHistory();
-      });
-
-      const current = as.annotations.at(-1);
-
-      if (current) current.setInitialValues();
-
-      self.setHistory(annotationHistory);
 
       if (!self.initialized) {
         self.initialized = true;
@@ -730,14 +819,20 @@ export default types
       // or annotation created from prediction
       await annotation.saveDraft({ was_postponed: true });
       await getEnv(self).events.invoke('nextTask');
+      self.incrementQueuePosition();
+
     }
 
     function nextTask() {
+
       if (self.canGoNextTask) {
         const { taskId, annotationId } = self.taskHistory[self.taskHistory.findIndex((x) => x.taskId === self.task.id) + 1];
 
         getEnv(self).events.invoke('nextTask', taskId, annotationId);
+        self.incrementQueuePosition();
+
       }
+
     }
 
     function prevTask(e, shouldGoBack = false) {
@@ -747,6 +842,8 @@ export default types
         const { taskId, annotationId } = self.taskHistory[length];
 
         getEnv(self).events.invoke('prevTask', taskId, annotationId);
+        self.incrementQueuePosition(-1);
+
       }
     }
 
@@ -758,13 +855,8 @@ export default types
       self.setUsers(uniqBy([...getSnapshot(self.users), ...users], 'id'));
     }
 
-    function setHydrated(value) {
-      self.hydrated = value;
-    }
-
     return {
       setFlags,
-      setHydrated,
       addInterface,
       hasInterface,
       toggleInterface,
@@ -786,6 +878,7 @@ export default types
       updateAnnotation,
       acceptAnnotation,
       rejectAnnotation,
+      presignUrlForProject,
       setUsers,
       mergeUsers,
 
@@ -802,8 +895,31 @@ export default types
       nextTask,
       prevTask,
       postponeTask,
+      incrementQueuePosition,
       beforeDestroy() {
         ToolsManager.removeAllTools();
+        appControls = null;
+      },
+
+      setAppControls,
+      clearApp,
+      renderApp,
+      selfDestroy() {
+        const children = [];
+
+        walk(self, (node) => {
+          if (!isRoot(node) && getParent(node) === self) children.push(node);
+        });
+
+        let node;
+
+        while ((node = children.shift())) {
+          try {
+            destroy(node);
+          } catch (e) {
+            console.log('Problem: ', e);
+          }
+        }
       },
     };
   });

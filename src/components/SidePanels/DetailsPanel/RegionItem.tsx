@@ -15,7 +15,7 @@ interface RegionItemProps {
   compact?: boolean;
   withIds?: boolean;
   mainDetails?: FC<{region: any}>;
-  metaDetails?: FC<{region: any, editMode?: boolean, cancelEditMode?: () => void}>;
+  metaDetails?: FC<{ region: any, editMode?: boolean, cancelEditMode?: () => void, enterEditMode: () => void }>;
 }
 
 export const RegionItem: FC<RegionItemProps> = observer(({
@@ -50,10 +50,10 @@ export const RegionItem: FC<RegionItemProps> = observer(({
         {withIds && <span>{region.cleanId}</span>}
       </Elem>
       {MainDetails && <Elem name="content"><MainDetails region={region}/></Elem>}
-      {region?.isDrawing && (
+      {region.isDrawing && (
         <Elem name="warning">
           <IconWarning />
-          <Elem name="warning-text">Incomplete {region.type.replace('region', '')}</Elem>
+          <Elem name="warning-text">Incomplete {region.type?.replace('region', '') ?? 'region'}</Elem>
         </Elem>
       )}
       {withActions && (
@@ -102,6 +102,7 @@ const RegionAction: FC<any> = observer(({
         }
       }}
       hotkey="region:relation"
+      aria-label="Create Relation"
     />
   ));
 

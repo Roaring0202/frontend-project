@@ -157,7 +157,7 @@ const createAddEventListenerScript = (eventName, callback) => {
  * Wait for the main Image object to be loaded
  */
 const waitForImage = () => {
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     const img = document.querySelector('[alt=LS]');
 
     if (!img || img.complete) return resolve();
@@ -165,6 +165,8 @@ const waitForImage = () => {
     img.onload = () => {
       setTimeout(resolve, 100);
     };
+    // if image is not loaded in 10 seconds, reject
+    setTimeout(reject, 10000);
   });
 };
 
@@ -232,7 +234,7 @@ const convertToFixed = (data, fractionDigits = 2) => {
   if (['string', 'number'].includes(typeof data)) {
     const n = Number(data);
 
-    return Number.isNaN(n) ? data : Number.isInteger(n) ? n : +Number(n).toFixed(fractionDigits);
+    return Number.isNaN(n) ? data : Number.isInteger(n) ? n : +n.toFixed(fractionDigits);
   }
   if (Array.isArray(data)) {
     return data.map(n => convertToFixed(n, fractionDigits));
@@ -531,12 +533,20 @@ async function generateImageUrl({ width, height }) {
   return canvas.toDataURL();
 }
 
-const getCanvasSize = () => {
-  const stage = window.Konva.stages[0];
+const getNaturalSize = () => {
+  const imageObject = window.Htx.annotationStore.selected.objects.find(o => o.type === 'image');
 
   return {
-    width: stage.width(),
-    height: stage.height(),
+    width: imageObject.naturalWidth,
+    height: imageObject.naturalHeight,
+  };
+};
+const getCanvasSize = () => {
+  const imageObject = window.Htx.annotationStore.selected.objects.find(o => o.type === 'image');
+
+  return {
+    width: imageObject.canvasSize.width,
+    height: imageObject.canvasSize.height,
   };
 };
 const getImageSize = () => {
@@ -619,11 +629,12 @@ const serialize = () => window.Htx.annotationStore.selected.serializeAnnotation(
 const selectText = async ({ selector, rangeStart, rangeEnd }) => {
   let [doc, win] = [document, window];
 
-  const elem = document.querySelector(selector);
+  let elem = document.querySelector(selector);
 
   if (elem.matches('iframe')) {
     doc = elem.contentDocument;
     win = elem.contentWindow;
+    elem = doc.body;
   }
 
   const findOnPosition = (root, position, borderSide = 'left') => {
@@ -812,6 +823,24 @@ function hasSelectedRegion() {
   return !!Htx.annotationStore.selected.highlightedNode;
 }
 
+// `mulberry32` (simple generator with a 32-bit state)
+function createRandomWithSeed(seed) {
+  return function() {
+    let t = seed += 0x6D2B79F5;
+
+    t = Math.imul(t ^ t >>> 15, t | 1);
+    t ^= t + Math.imul(t ^ t >>> 7, t | 61);
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+function createRandomIntWithSeed(seed) {
+  const random = createRandomWithSeed(seed);
+
+  return function(min, max) {
+    return Math.floor(random() * (max - min + 1) + min);
+  };
+}
+
 module.exports = {
   initLabelStudio,
   createLabelStudioInitFunction,
@@ -838,6 +867,7 @@ module.exports = {
   areEqualRGB,
   hasKonvaPixelColorAtPoint,
   getKonvaPixelColorFromPoint,
+  getNaturalSize,
   getCanvasSize,
   getImageSize,
   getImageFrameSize,
@@ -863,4 +893,7 @@ module.exports = {
 
   omitBy,
   dumpJSON,
+
+  createRandomWithSeed,
+  createRandomIntWithSeed,
 };

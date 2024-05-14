@@ -91,13 +91,9 @@ export const RegionDetailsMain: FC<{region: any}> = observer(({
         {region?.text ? (
           <Block name="region-meta">
             <Elem name="item">
-              <Elem
-                name="content"
-                mod={{ type: 'text' }}
-                dangerouslySetInnerHTML={{
-                  __html: region.text.replace(/\\n/g, '\n'),
-                }}
-              />
+              <Elem name="content" mod={{ type: 'text' }}>
+                {region.text.replace(/\\n/g, '\n')}
+              </Elem>
             </Elem>
           </Block>
         ) : null}
@@ -124,7 +120,7 @@ export const RegionDetailsMeta: FC<RegionDetailsMetaProps> = observer(({
   const input = useRef<HTMLTextAreaElement | null>();
 
   const saveMeta = (value: string) => {
-    region.setMetaInfo(value);
+    region.setMetaText(value);
     region.setNormInput(value);
   };
 
@@ -185,7 +181,7 @@ export const RegionDetailsMeta: FC<RegionDetailsMetaProps> = observer(({
   //           type="delete"
   //           style={{ cursor: "pointer" }}
   //           onClick={() => {
-  //             region.deleteMetaInfo();
+  //             region.deleteMetaText();
   //           }}
   //         />
   //       </Elem>

@@ -19,16 +19,16 @@ jobs:
     # ci can be skipped with `[skip ci]` prefix in message
     if: "!contains(github.event.head_commit.message, 'skip ci')"
     steps:
-      - uses: hmarr/debug-action@v2.1.0
+      - uses: hmarr/debug-action@v3.0.0
 
       - name: "Checkout codebase"
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           ref: ${{ inputs.sha }}
 
       - name: "Setup NodeJS"
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
           node-version: "${{ env.NODE }}"
 
@@ -40,15 +40,22 @@ jobs:
         run: echo "dir=$(yarn cache dir)" >> $GITHUB_OUTPUT
 
       - name: Configure yarn cache
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: ${{ steps.yarn-cache-dir-path.outputs.dir }}
           key: ${{ env.CACHE_NAME_PREFIX }}-${{ runner.os }}-node-${{ env.NODE }}-${{ hashFiles('**/yarn.lock') }}
           restore-keys: |
             yarn-${{ env.CACHE_NAME_PREFIX }}-${{ runner.os }}-node-${{ env.NODE }}-
 
+      - name: Install dependencies for unit tests
+        run: yarn install --frozen-lockfile
+
+      - name: "[DEBUG] Print installed npm packages"
+        run: |
+          npm list --depth=1 || true
+
       - name: Run unit tests
-        run: yarn install --frozen-lockfile && yarn test:coverage
+        run: yarn test:coverage
 
       # - name: Upload coverage to Codecov
       #   uses: codecov/codecov-action@v3.1.1
@@ -58,7 +65,7 @@ jobs:
       #     token: ${{ secrets.CODECOV_TOKEN }}
       - name: Upload coverage to Artifacts
         if: ${{ !github.event.pull_request.head.repo.fork }}
-        uses: actions/upload-artifact@v3
+        uses: ./.github/actions/upload-artifact
         with:
           name: unit-tests-coverage
           path: coverage/
